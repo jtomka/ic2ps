@@ -13,23 +13,6 @@ function debug($format, ...$args) {
         return call_user_func_array('err', func_get_args());
 }
 
-$file = new StdClass();
-
-$ignition_dirname = '/Users/jan/Ignition Casino Poker/Hand History/580179758628';
-$ignition_filename = 'HH20190304-161444 - 6484717 - RING - $0.02-$0.05 - HOLDEM - NL - TBL No.17948084.txt';
-
-$REGEX_DIRNAME = '/^.*\/Hand History\/(?<id>\d+)\/?$/';
-if (! preg_match($REGEX_DIRNAME, $ignition_dirname, $file->account))
-    die('directory name format mismatch');
-
-$REGEX_FILENAME = '/^HH(?<year>\d{4})(?<month>\d{2})(?<day>\d{2})-(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2}) - (?<id>\d+) - (?<format>[A-Z]+) - \$(?<sb>[0-9.]+)-\$(?<bb>[0-9.]+) - (?<game>[A-Z]+) - (?<limit>[A-Z]+) - TBL No.(?<table>\d+)\.txt$/';
-if (! preg_match($REGEX_FILENAME, $ignition_filename, $file->history))
-    die('filename format mismatch');
-
-$ignition_full_filename = $ignition_dirname . '/' . $ignition_filename;
-if (($file->fh = @fopen($ignition_full_filename, 'r')) === FALSE)
-    die('failed to open file ' . $ignition_full_filename);
-
 const STATE_INIT = 'init';
 const STATE_SEATS = 'seats';
 const STATE_CARDS = 'cards';
@@ -55,7 +38,8 @@ function check_state_change($file)
             STATE_SEATS,
         ),
         STATE_SEATS => array(
-            STATE_CARDS
+            STATE_CARDS,
+            STATE_SUMMARY,
         ),
         STATE_CARDS => array(
             STATE_FLOP,
@@ -103,10 +87,12 @@ function check_state_change($file)
 function parse_action($hand, $file)
 {
     $action_regexs = array(
-        'REGEX_ACTION' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Folds|Checks|Calls|Bets|Raises|All-in|All-in\(raise\)|Hand result(-Side pot)?)( \(auth\))?( \$(?<chips>[0-9.]+)( to \$(?<to_chips>[0-9.]+))?)?$/',
+        'REGEX_ACTION' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Folds|Checks|Calls|Bets|Raises|All-in|All-in\(raise\)|Hand result(-Side pot)?)( \((auth|timeout|disconnect)\))?( \$(?<chips>[0-9.]+)( to \$(?<to_chips>[0-9.]+))?)?$/',
         'REGEX_RETURN' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Return) uncalled portion of bet \$(?<chips>[0-9.]+)$/',
-        'REGEX_NOSHOW' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Does not show|Mucks) \[(?<card1>[2-9TJQKA][cdhs]) (?<card2>[2-9TJQKA][cdhs])\]( Show1 \[(?<show1>[2-9TJQKA][cdhs])\])? \((?<ranking>.*)\)$/',
+        'REGEX_NOSHOW' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Does not show|Mucks|Folds)( & shows)? \[(?<card1>[2-9TJQKA][cdhs]) (?<card2>[2-9TJQKA][cdhs])\]( Show1 \[(?<show1>[2-9TJQKA][cdhs])\])?( \((?<ranking>.*)\))?$/',
         'REGEX_SHOWDOWN' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Showdown) \[(?<card1>[2-9TJQKA][cdhs]) (?<card2>[2-9TJQKA][cdhs]) (?<card3>[2-9TJQKA][cdhs]) (?<card4>[2-9TJQKA][cdhs]) (?<card5>[2-9TJQKA][cdhs])\] \((?<ranking>.*)\)$/',
+        // ignore, not an actual showdown
+        'REGEX_SHOWDOWN_NOT' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Showdown\(High Card\))$/',
     );
 
     $state_property = array(
@@ -198,8 +184,12 @@ function process_actions($actions)
     return $out;
 }
 
-function hand_process($hand, $file)
+function process_hand($hand, $file)
 {
+    debug('file %s', $file->file['full_path']);
+    debug('line %d', $file->lineno);
+    debug('hand %s', $hand->info['id']);
+
     $out = '';
 
     $str_casino = 'PokerStars';
@@ -373,7 +363,15 @@ function hand_process($hand, $file)
                 if ($seat['player'] == $action['player'])
                     break;
             }
-            $result = sprintf('showed [%s %s] and won ($%.02f) with %s', $seat['card1'], $seat['card2'], $action['chips'], $action['ranking']);
+
+            $won_with = '';
+            if (! empty($action['ranking']))
+                $won_with = sprintf(' with %s', $action['ranking']);
+
+            if (! $won_with) // make up something
+                $won_with = ' with a pair of Deuces';
+
+            $result = sprintf('showed [%s %s] and won ($%.02f)%s', $seat['card1'], $seat['card2'], $action['chips'], $won_with);
         } elseif ($action['action'] == 'Folded') {
             $result = $tr_summary_action[$action['action_full']];
         } elseif ($action['action'] == 'Mucked') {
@@ -383,201 +381,291 @@ function hand_process($hand, $file)
         $out .= sprintf("Seat %d: %s%s %s\n", $action['seatno'], me($action['player']), $str_position, $result);
     }
 
-    if (false && $hand->info['id'] == '3740761911') {
-        echo print_r($hand, true);
-        return false;
-    }
-
     echo "\n" . $out . "\n";
 
     return true;
 }
 
-$file->lineno = 0;
-$file->handno = 0;
-$file->state = STATE_INIT;
-$file->rerun = false;
-$file->eof = false;
+function process_file($ignition_hh_dir, $account_dir, $hh_file) {
+    global $file;
+    global $hand;
 
-while ($file->rerun || ($file->line = fgets($file->fh)) || ($file->eof = feof($file->fh))) {
-    if ($file->eof && $file->state != STATE_SUMMARY) {
-        $file->error = 'Unexpected end of file';
-        break;
-    }
+    debug('file %s', $hh_file);
 
-    if ($file->eof || $file->rerun) { // Processing the same line after a state change.
-        $file->rerun = false;
-    } else {
-        $file->line = trim($file->line);
-        $file->lineno++;
+    $file = new StdClass();
 
-        if (check_state_change($file))
-            continue;
-    }
+    $file->file = array(
+        'hh_dir' => $ignition_hh_dir,
+        'account_dir' => $account_dir,
+        'hh_file' => $hh_file,
+        'full_path' => $ignition_hh_dir . '/' . $account_dir . '/' . $hh_file,
+    );
 
-    //debug($file->handno . '/' . str_pad($file->state, 7) . ' ' . $file->line);
+    $file->account['id'] = $account_dir;
 
-    /* Ignored lines */
+    $REGEX_FILENAME = '/^HH(?<year>\d{4})(?<month>\d{2})(?<day>\d{2})-(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2}) - (?<id>\d+) - (?<format>[A-Z]+) - \$(?<sb>[0-9.]+)-\$(?<bb>[0-9.]+) - (?<game>[A-Z]+) - (?<limit>[A-Z]+) - TBL No.(?<table>\d+)\.txt$/';
+    if (! preg_match($REGEX_FILENAME, $hh_file, $file->history))
+        return; // ignore file
 
-    if (! $file->eof) {
-        if ($file->line == '')
-            continue;
+    if (($file->fh = @fopen($file->file['full_path'], 'r')) === FALSE)
+        die('failed to open file ' . $file->file['full_path']);
 
-        $REGEX_IGNORE = array(
-            '/^((?<player>.*) : )?Table enter user$/',
-            '/^((?<player>.*) : )?Table leave user$/',
-            '/^((?<player>.*) : )?Seat sit down$/',
-            '/^((?<player>.*) : )?Seat sit out$/',
-            '/^((?<player>.*) : )?Seat stand$/',
-            '/^((?<player>.*) : )?Seat re-join$/',
-            '/^((?<player>.*) : )?Table deposit (?<chips>\$[0-9.]+)$/',
-        );
+    $file->lineno = 0;
+    $file->handno = 0;
+    $file->state = STATE_INIT;
+    $file->rerun = false;
+    $file->eof = false;
 
-        $ignore = false;
-        foreach ($REGEX_IGNORE as $regex) {
-            if (preg_match($regex, $file->line)) {
-                $ignore = true;
+    while ($file->rerun || ($file->line = fgets($file->fh)) || ($file->eof = feof($file->fh))) {
+        if ($file->eof && $file->state != STATE_SUMMARY) {
+            $file->error = 'Unexpected end of file';
+            break;
+        }
+
+        if ($file->eof || $file->rerun) { // Processing the same line after a state change.
+            $file->rerun = false;
+        } else {
+            $file->line = trim($file->line);
+            $file->lineno++;
+
+            if (check_state_change($file))
+                continue;
+        }
+
+        /* Ignored lines */
+
+        if (! $file->eof) {
+            if ($file->line == '')
+                continue;
+
+            $REGEX_IGNORE = array(
+                '/^((?<player>.*) : )?Table enter user$/',
+                '/^((?<player>.*) : )?Table leave user$/',
+                '/^((?<player>.*) : )?Seat sit down$/',
+                '/^((?<player>.*) : )?Seat sit out$/',
+                '/^((?<player>.*) : )?Seat stand$/',
+                '/^((?<player>.*) : )?Seat re-join$/',
+                '/^((?<player>.*) : )?Table deposit (?<chips>\$[0-9.]+)$/',
+            );
+
+            $ignore = false;
+            foreach ($REGEX_IGNORE as $regex) {
+                if (preg_match($regex, $file->line)) {
+                    $ignore = true;
+                    break;
+                }
+            }
+            if ($ignore)
+                continue;
+        }
+
+        switch ($file->state) {
+        case STATE_INIT:
+            if (! empty($file->previous_state)) {
+                /* Process previous hand */
+                if (! process_hand($hand, $file)) {
+                    $file->error = 'Failed to process hand #' . $file->handno;
+                    break;
+                }
+            }
+
+            if ($file->eof)
+                break;
+
+            $hand = new StdClass();
+
+            $REGEX_INIT = '/^(?<casino>Ignition) Hand #(?<id>\d+) TBL#(?<table>\d+) (?<game>[A-Z]+) (?<limit>[^-]+) - (?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2}) (?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})$/';   
+            if (! preg_match($REGEX_INIT, $file->line, $hand->info)) {
+                $file->error = 'Expecting init line';
                 break;
             }
-        }
-        if ($ignore)
-            continue;
-    }
 
-    switch ($file->state) {
-    case STATE_INIT:
-        if (! empty($file->previous_state)) {
-            /* Process previous hand */
-            if (! hand_process($hand, $file)) {
-                $file->error = 'Failed to process hand #' . $file->handno;
+            $file->handno++;
+            break;
+
+        case STATE_SEATS:
+            $REGEX_SEAT = '/^Seat (?<seatno>\d+): (?<player>.*?)(?<me> \[ME\])? \(\$(?<chips>[0-9.]+) in chips\)$/';
+            if (preg_match($REGEX_SEAT, $file->line, $hand->seats[]))
+                break;
+
+            $REGEX_DEALER = '/^((?<player>.*?)(?<me>  \[ME\])? : )?Set dealer( \[(?<seatno>\d+)\])?$/';
+            if (empty($hand->dealer) && preg_match($REGEX_DEALER, $file->line, $hand->dealer))
+                break;
+
+            $REGEX_SB = '/^(?<player>.*?)(?<me>  \[ME\])? : (?<blind>Small Blind) \$(?<chips>[0-9.]+)$/';
+            if (empty($hand->posts['sb']) && preg_match($REGEX_SB, $file->line, $hand->posts['sb']))
+                break;
+
+            $REGEX_BB = '/^(?<player>.*?)(?<me>  \[ME\])? : (?<blind>Big blind) \$(?<chips>[0-9.]+)$/';
+            if (empty($hand->posts['bb']) && preg_match($REGEX_BB, $file->line, $hand->posts['bb']))
+                break;
+
+            $REGEX_SITOUT = '/^(?<player>.*?)(?<me>  \[ME\])? : Sitout \(wait for bb\)$/';
+            if (preg_match($REGEX_SITOUT, $file->line, $hand->posts['sitout'][]))
+                break;
+
+            $REGEX_RETURN_PRE = '/^(?<player>.*?)(?<me>  \[ME\])? : Return uncalled blind \$(?<chips>[0-9.]+)$/';
+            if (preg_match($REGEX_RETURN_PRE, $file->line, $hand->posts['return'][]))
+                break;
+
+            $REGEX_POST = '/^(?<player>.*?)(?<me>  \[ME\])? : Posts( (?<dead>dead))? chip \$(?<chips>[0-9.]+)$/';
+            if (preg_match($REGEX_POST, $file->line, $hand->posts['other'][]))
+                break;
+
+            $file->error = 'Expecting one Seat, Dealer, Small Blind or Big Blind line, and multiple Posts lines';
+            break;
+
+        case STATE_CARDS: // PREFLOP
+
+            // Small Blind  [ME] : Card dealt to a spot [4c 4d] 
+            $REGEX_DEALT = '/^(?<player>.*?)(?<me>  \[ME\])? : Card dealt to a spot \[(?<card1>[2-9TJQKA][cdhs]) (?<card2>[2-9TJQKA][cdhs])\]$/';
+            if (preg_match($REGEX_DEALT, $file->line, $hand->preflop['hole_cards'][]))
+                break;
+
+            if (! parse_action($hand, $file))
+                break;
+         
+            break;
+
+        case STATE_FLOP:
+            $REGEX_FLOP = '/^\*\*\* FLOP \*\*\* \[([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs])\]$/';
+            if (empty($hand->flop['cards'])) {
+                if (! preg_match($REGEX_FLOP, $file->line, $hand->flop['cards']))
+                    $file->error = 'Expecting FLOP line';
                 break;
             }
-        }
 
-        if ($file->eof)
+            if (! parse_action($hand, $file))
+                break;
+         
             break;
 
-        $hand = new StdClass();
+        case STATE_TURN:
+            $REGEX_TURN = '/^\*\*\* TURN \*\*\* \[[2-9TJQKA][cdhs] [2-9TJQKA][cdhs] [2-9TJQKA][cdhs]\] \[([2-9TJQKA][cdhs])\]$/';
+            if (empty($hand->turn['cards'])) {
+               if (! preg_match($REGEX_TURN, $file->line, $hand->turn['cards'])) 
+                    $file->error = 'Expecting TURN line';
+                break;
+            }
 
-        $REGEX_INIT = '/^(?<casino>Ignition) Hand #(?<id>\d+) TBL#(?<table>\d+) (?<game>[A-Z]+) (?<limit>[^-]+) - (?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2}) (?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})$/';   
-        if (! preg_match($REGEX_INIT, $file->line, $hand->info)) {
-            $file->error = 'Expecting init line';
-            break;
-        }
-
-        $file->handno++;
-        break;
-
-    case STATE_SEATS:
-        $REGEX_SEAT = '/^Seat (?<seatno>\d+): (?<player>.*?)(?<me> \[ME\])? \(\$(?<chips>[0-9.]+) in chips\)$/';
-        if (preg_match($REGEX_SEAT, $file->line, $hand->seats[]))
+            if (! parse_action($hand, $file))
+                break;
+         
             break;
 
-        $REGEX_DEALER = '/^((?<player>.*?)(?<me>  \[ME\])? : )?Set dealer( \[(?<seatno>\d+)\])?$/';
-        if (empty($hand->dealer) && preg_match($REGEX_DEALER, $file->line, $hand->dealer))
+        case STATE_RIVER:
+            $REGEX_RIVER = '/^\*\*\* RIVER \*\*\* \[[2-9TJQKA][cdhs] [2-9TJQKA][cdhs] [2-9TJQKA][cdhs] [2-9TJQKA][cdhs]\] \[([2-9TJQKA][cdhs])\]$/';
+            if (empty($hand->river['cards'])) {
+               if (! preg_match($REGEX_RIVER, $file->line, $hand->river['cards']))
+                    $file->error = 'Expecting RIVER line';
+                break;
+            }
+
+            if (! parse_action($hand, $file))
+                break;
+         
             break;
 
-        $REGEX_SB = '/^(?<player>.*?)(?<me>  \[ME\])? : (?<blind>Small Blind) \$(?<chips>[0-9.]+)$/';
-        if (empty($hand->posts['sb']) && preg_match($REGEX_SB, $file->line, $hand->posts['sb']))
-            break;
+        // Total Pot($0.90)
+        // Board [8d 4h Ah Th 6s]
+        // Seat+1: Dealer Folded before the FLOP
+        // Seat+4: Small Blind Folded on the RIVER
+        // Seat+5: Big Blind $0.86 [Does not show]  
+        case STATE_SUMMARY:
+            if ($file->previous_state == STATE_SEATS) {
+                // abort mission, this hand ended before cards were dealt
+                $file->previous_state = null;
+                $file->state = STATE_INIT;
+            }
 
-        $REGEX_BB = '/^(?<player>.*?)(?<me>  \[ME\])? : (?<blind>Big blind) \$(?<chips>[0-9.]+)$/';
-        if (empty($hand->posts['bb']) && preg_match($REGEX_BB, $file->line, $hand->posts['bb']))
-            break;
+            $REGEX_TOTAL = '/^Total Pot\(\$(?<chips>[0-9.]+)\)$/';
+            if (empty($hand->summary['pot']) && preg_match($REGEX_TOTAL, $file->line, $hand->summary['pot']))
+                break;
 
-        $REGEX_POST = '/^(?<player>.*?)(?<me>  \[ME\])? : Posts chip \$(?<chips>[0-9.]+)$/';
-        if (preg_match($REGEX_POST, $file->line, $hand->posts['other'][]))
-            break;
+            $REGEX_BOARD = '/^Board \[([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs])? ([2-9TJQKA][cdhs])?\]$/';
+            if (empty($hand->summary['board']) && preg_match($REGEX_BOARD, $file->line, $hand->summary['board']))
+                break;
 
-        $file->error = 'Expecting one Seat, Dealer, Small Blind or Big Blind line, and multiple Posts lines';
-        break;
+            $REGEX_FOLDED = '/^Seat\+(?<seatno>\d+): (?<player>.*?) (?<action_full>(?<action>Folded) (?<street>(on|before) the (FLOP|TURN|RIVER)))$/';
+            if (preg_match($REGEX_FOLDED, $file->line, $hand->summary['seats'][]))
+                break;
 
-    case STATE_CARDS: // PREFLOP
+            $REGEX_MUCKED = '/^Seat\+(?<seatno>\d+): (?<player>.*?) \[(?<action>Mucked)\] \[(?<card1>[2-9TJQKA][cdhs]) (?<card2>[2-9TJQKA][cdhs])\]$/';
+            if (preg_match($REGEX_MUCKED, $file->line, $hand->summary['seats'][]))
+                break;
 
-        // Small Blind  [ME] : Card dealt to a spot [4c 4d] 
-        $REGEX_DEALT = '/^(?<player>.*?)(?<me>  \[ME\])? : Card dealt to a spot \[(?<card1>[2-9TJQKA][cdhs]) (?<card2>[2-9TJQKA][cdhs])\]$/';
-        if (preg_match($REGEX_DEALT, $file->line, $hand->preflop['hole_cards'][]))
-            break;
+            $REGEX_WON = '/^Seat\+(?<seatno>\d+): (?<player>.*?) \$(?<chips>[0-9.]+) (\[Does not show\]| with (?<ranking>.*) \[(?<hand>[^[]*)\])$/';
+            if (preg_match($REGEX_WON, $file->line, $hand->summary['seats'][]))
+                break;
 
-        if (! parse_action($hand, $file))
-            break;
-     
-        break;
-
-    case STATE_FLOP:
-        $REGEX_FLOP = '/^\*\*\* FLOP \*\*\* \[([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs])\]$/';
-        if (empty($hand->flop['cards'])) {
-            if (! preg_match($REGEX_FLOP, $file->line, $hand->flop['cards']))
-                $file->error = 'Expecting FLOP line';
-            break;
-        }
-
-        if (! parse_action($hand, $file))
-            break;
-     
-        break;
-
-    case STATE_TURN:
-        $REGEX_TURN = '/^\*\*\* TURN \*\*\* \[[2-9TJQKA][cdhs] [2-9TJQKA][cdhs] [2-9TJQKA][cdhs]\] \[([2-9TJQKA][cdhs])\]$/';
-        if (empty($hand->turn['cards'])) {
-           if (! preg_match($REGEX_TURN, $file->line, $hand->turn['cards'])) 
-                $file->error = 'Expecting TURN line';
             break;
         }
 
-        if (! parse_action($hand, $file))
+        if ($file->eof || ! empty($file->error))
             break;
-     
-        break;
+    };
 
-    case STATE_RIVER:
-        $REGEX_RIVER = '/^\*\*\* RIVER \*\*\* \[[2-9TJQKA][cdhs] [2-9TJQKA][cdhs] [2-9TJQKA][cdhs] [2-9TJQKA][cdhs]\] \[([2-9TJQKA][cdhs])\]$/';
-        if (empty($hand->river['cards'])) {
-           if (! preg_match($REGEX_RIVER, $file->line, $hand->river['cards']))
-                $file->error = 'Expecting RIVER line';
-            break;
-        }
+    fclose($file->fh);
 
-        if (! parse_action($hand, $file))
-            break;
-     
-        break;
-
-    // Total Pot($0.90)
-    // Board [8d 4h Ah Th 6s]
-    // Seat+1: Dealer Folded before the FLOP
-    // Seat+4: Small Blind Folded on the RIVER
-    // Seat+5: Big Blind $0.86 [Does not show]  
-    case STATE_SUMMARY:
-        $REGEX_TOTAL = '/^Total Pot\(\$(?<chips>[0-9.]+)\)$/';
-        if (empty($hand->summary['pot']) && preg_match($REGEX_TOTAL, $file->line, $hand->summary['pot']))
-            break;
-
-        $REGEX_BOARD = '/^Board \[([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs])? ([2-9TJQKA][cdhs])?\]$/';
-        if (empty($hand->summary['board']) && preg_match($REGEX_BOARD, $file->line, $hand->summary['board']))
-            break;
-
-        $REGEX_FOLDED = '/^Seat\+(?<seatno>\d+): (?<player>.*?) (?<action_full>(?<action>Folded) (?<street>(on|before) the (FLOP|TURN|RIVER)))$/';
-        if (preg_match($REGEX_FOLDED, $file->line, $hand->summary['seats'][]))
-            break;
-
-        $REGEX_MUCKED = '/^Seat\+(?<seatno>\d+): (?<player>.*?) \[(?<action>Mucked)\] \[(?<card1>[2-9TJQKA][cdhs]) (?<card2>[2-9TJQKA][cdhs])\]$/';
-        if (preg_match($REGEX_MUCKED, $file->line, $hand->summary['seats'][]))
-            break;
-
-        $REGEX_WON = '/^Seat\+(?<seatno>\d+): (?<player>.*?) \$(?<chips>[0-9.]+) (\[Does not show\]| with (?<ranking>.*) \[(?<hand>[^[]*)\])$/';
-        if (preg_match($REGEX_WON, $file->line, $hand->summary['seats'][]))
-            break;
-
-        break;
+    if (! empty($file->error)) {
+        err("<<< %s\nERR %s\nFile %s (Line %d)", $file->line, $file->error, $file->file['full_path'], $file->lineno);
+        exit(1);
     }
-
-    if ($file->eof || ! empty($file->error))
-        break;
-};
-
-if (! empty($file->error)) {
-    err('Line #' . $file->lineno . ': ' . $file->error . ' (' . $file->line . ')' . "\n");
-    exit(1);
 }
+
+function process_ignition_hh_dir($ignition_hh_dir)
+{
+    debug('ignition_hh_dir %s', $ignition_hh_dir);
+
+    if (! is_dir($ignition_hh_dir) || ! is_readable($ignition_hh_dir)) {
+        err("%s does not exist or is not a directory", $ignition_hh_dir);
+        exit(1);
+    }
+
+    if ($dh = opendir($ignition_hh_dir)) {
+        while (($account_dir = readdir($dh)) !== false) {
+            if (! is_dir($ignition_hh_dir . '/' . $account_dir))
+                continue;
+
+            if (! preg_match('/^\d+$/', $account_dir))
+                continue;
+
+            process_account_dir($ignition_hh_dir, $account_dir);
+        }
+
+        closedir($dh);
+    }
+}
+
+// e.g. HH20190304-161444 - 6484717 - RING - $0.02-$0.05 - HOLDEM - NL - TBL No.17948084.txt
+
+function process_account_dir($ignition_hh_dir, $account_dir)
+{
+    global $file;
+
+    debug('account_dir %s/%s', $ignition_hh_dir, $account_dir);
+
+    if ($dh = opendir($ignition_hh_dir . '/' . $account_dir)) {
+        while (($hh_file = readdir($dh)) !== false) {
+            $full_path = $ignition_hh_dir . '/' . $account_dir . '/' . $hh_file;
+
+            if (! is_file($full_path) || ! is_readable($full_path))
+                continue;
+
+            if (! preg_match('/^\d+$/', $account_dir))
+                continue;
+
+            process_file($ignition_hh_dir, $account_dir, $hh_file);
+        }
+
+        closedir($dh);
+    }
+}
+
+$file = new StdClass();
+$hand = new StdClass();
+
+$ignition_hh_dir = getenv("HOME") . '/Ignition Casino Poker/Hand History';
+
+process_ignition_hh_dir($ignition_hh_dir);
 
