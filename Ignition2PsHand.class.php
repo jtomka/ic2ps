@@ -495,8 +495,6 @@ class Ignition2PsHand
      */
     public function convertToPsFormat()
     {
-        debug('            %s', $this->info['id']);
-
         if (isset($this->ps_format))
             return $this;
 

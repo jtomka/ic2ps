@@ -20,27 +20,42 @@ class PsHh {
 
     public function process()
     {
+        debug("PokerStars Hand History: %s", $this->ps_hh_dir);
+
         ksort($this->hand_store, SORT_STRING);
         foreach ($this->hand_store as $ps_account_id => $filenames) {
+            debug("    Account: %s", $ps_account_id);
+
             $dirname = sprintf("%s/%s", $this->ps_hh_dir, $ps_account_id);
 
-            if (! mkdir($dirname, 0755, true))
-                continue;
+            if (file_exists($dirname)) {
+                if (! is_dir($dirname) || ! is_writeable($dirname))
+                    throw new PsHhException(sprintf("%s is not directory or is not writeable", $dirname));
+            } else {
+                if (! @mkdir($dirname, 0755, true))
+                    throw new PsHhException(sprintf("%s can't be created", $dirname));
+            }
 
             ksort($filenames, SORT_STRING);
             foreach ($filenames as $filename => $timestamps) {
+                debug("        %s (%d hands)", $filename, count($timestamps));
 
-                debug("%s/%s/%s (%d)", $this->ps_hh_dir, $ps_account_id, $filename, count($timestamps));
+                $full_name = $dirname . '/' . $filename;
 
-                if (! $fh = fopen($dirname . '/' . $filename))
-                    continue;
+                if (! $fh = @fopen($full_name, 'w'))
+                    throw new PsHhException(sprintf("%s can't be created", $dirname));
 
                 ksort($timestamps, SORT_NUMERIC);
-                foreach ($timestamps as $ps_format_hand) {
-                    echo $ps_format_hand;
+                try {
+                    foreach ($timestamps as $ps_format_hand) {
+                        if (! fputs($fh, $ps_format_hand))
+                            throw new PsHhException(sprintf("%s failed to write to file", $full_name));
+                    }
+                } catch (PsHhException $e) {
+                    throw $e;
+                } finally {
+                    fclose($fh);
                 }
-
-                fclose($fh);
             }
         }
     }

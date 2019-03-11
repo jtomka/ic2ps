@@ -77,7 +77,7 @@ class Ignition2Ps
      */
     public function processHh()
     {
-        debug("%s", $this->ignition_hh_dir);
+        debug("Ignition Hand History: %s", $this->ignition_hh_dir);
 
         if (! is_dir($this->ignition_hh_dir) || ! is_readable($this->ignition_hh_dir))
             throw new Exception($this->ignition_hh_dir . " does not exist or is not a directory");
@@ -105,7 +105,7 @@ class Ignition2Ps
      */
     protected function processAccountDir($ignition_account_dir)
     {
-        debug("    %s", $ignition_account_dir);
+        debug("    Account: %s", $ignition_account_dir);
 
         $this->ignition_account_dir = $ignition_account_dir;
 
@@ -131,7 +131,7 @@ class Ignition2Ps
      */
     protected function processFile($ignition_hh_file)
     {
-        debug("        %s", $ignition_hh_file);
+        deb("        %s", $ignition_hh_file);
 
         $this->ignition_hh_file = $ignition_hh_file;
 
@@ -143,9 +143,12 @@ class Ignition2Ps
                 return;
             }
 
+            $i = 1;
             while ($hand = $ignition_file->convertNextHand()) {
                 $this->ps_hh->store($hand);
+                $i++;
             }
+            debug(" (%d hands)", $i);
         } catch (IgnitionHhFileException $e) {
             throw new Exception(sprintf("%s in file %s on line %d: %s", $e->getMessage(), $ignition_file->getIgnitionHhFileFullPath(), $ignition_file->getLineNo(), $ignition_file->getLine()));
 
