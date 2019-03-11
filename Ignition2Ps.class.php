@@ -2,17 +2,80 @@
 
 class Ignition2Ps
 {
-    protected $hand;
+    const PS_ACCOUNT_PREFIX = 'Ignition';
 
-    public function __construct($ignition_hh_dir)
+    const PS_TABLE_PREFIX = 'Ignition';
+
+    const PS_HAND_PREFIX = '99999';
+
+    // Ignition hand history directory (full path)
+    protected $ignition_hh_dir;
+
+    // Ignition hand history account directory (dirname)
+    protected $ignition_account_dir;
+
+    // Current Ignition hand history file (basename)
+    protected $ignition_hh_file;
+
+    // PokerStars hand history directory (full path)
+    protected $ps_hh_dir;
+
+    // PokerStars hand history writer object
+    protected $ps_hh;
+
+    public function __construct($ignition_hh_dir, $ps_hh_dir)
     {
         $this->ignition_hh_dir = $ignition_hh_dir;
+        $this->ps_hh_dir = $ps_hh_dir;
+
+        $this->ps_hh = new PsHh($ps_hh_dir);
+    }
+
+    public function getIgnitionHhDir()
+    {
+        return $this->ignition_hh_dir;
+    }
+
+    public function getIgnitionAccountDir()
+    {
+        return $this->ignition_account_dir;
+    }
+
+    public function getIgnitionAccountId()
+    {
+        return $this->getIgnitionAccountDir();
+    }
+
+    public function getIgnitionHhFile()
+    {
+        return $this->ignition_hh_file;
+    }
+
+    public function getPsHandId($hand_id)
+    {
+        return self::PS_HAND_PREFIX . $hand_id;
+    }
+
+    /**
+     * Table name to use for generated PokerStars hand history
+     */
+    public function getPsTableName($table)
+    {
+        return self::PS_TABLE_PREFIX . $table;
+    }
+
+    /**
+     * Account ID (player name) to use for generated PokerStars hand history
+     */
+    public function getPsAccountId()
+    {
+        return self::PS_ACCOUNT_PREFIX . $this->getIgnitionAccountId();
     }
 
     /**
      * Process entire Ignition hand history directory
      */
-    public function processIgnitionHh()
+    public function processHh()
     {
         debug("%s", $this->ignition_hh_dir);
 
@@ -20,40 +83,43 @@ class Ignition2Ps
             throw new Exception($this->ignition_hh_dir . " does not exist or is not a directory");
 
         if ($dh = opendir($this->ignition_hh_dir)) {
-            while (($account_dir = readdir($dh)) !== false) {
-                if (! is_dir($this->ignition_hh_dir . '/' . $account_dir))
+            while (($ignition_account_dir = readdir($dh)) !== false) {
+                if (! is_dir($this->ignition_hh_dir . '/' . $ignition_account_dir))
                     continue;
 
-                if (! preg_match('/^\d+$/', $account_dir))
+                if (! preg_match('/^\d+$/', $ignition_account_dir))
                     continue;
 
-                $this->processAccountDir($account_dir);
+                $this->processAccountDir($ignition_account_dir);
             }
 
             closedir($dh);
         }
+
+        // Save all generated PokerStars hands into hand history files
+        $this->ps_hh->process();
     }
 
     /**
      * Process Ignition hand history account directory
      */
-    protected function processAccountDir($account_dir)
+    protected function processAccountDir($ignition_account_dir)
     {
-        debug("    %s", $account_dir);
+        debug("    %s", $ignition_account_dir);
 
-        $this->account_dir = $account_dir;
+        $this->ignition_account_dir = $ignition_account_dir;
 
-        if ($dh = opendir($this->ignition_hh_dir . '/' . $account_dir)) {
-            while (($hh_file = readdir($dh)) !== false) {
-                $full_path = $this->ignition_hh_dir . '/' . $account_dir . '/' . $hh_file;
+        if ($dh = opendir($this->ignition_hh_dir . '/' . $ignition_account_dir)) {
+            while (($ignition_hh_file = readdir($dh)) !== false) {
+                $ignition_full_path = $this->ignition_hh_dir . '/' . $ignition_account_dir . '/' . $ignition_hh_file;
 
-                if (! is_file($full_path) || ! is_readable($full_path))
+                if (! is_file($ignition_full_path) || ! is_readable($ignition_full_path))
                     continue;
 
-                if (! preg_match('/^\d+$/', $account_dir))
+                if (! preg_match('/^\d+$/', $ignition_account_dir))
                     continue;
 
-                $this->processFile($hh_file);
+                $this->processFile($ignition_hh_file);
             }
 
             closedir($dh);
@@ -63,25 +129,31 @@ class Ignition2Ps
     /**
      * Process individual Ignition hand history file
      */
-    protected function processFile($hh_file)
+    protected function processFile($ignition_hh_file)
     {
-        debug("        %s", $hh_file);
+        debug("        %s", $ignition_hh_file);
 
-        $this->hh_file = $hh_file;
+        $this->ignition_hh_file = $ignition_hh_file;
 
-        $file = new IgnitionHhFile($hh_file, $this);
+        $ignition_file = new IgnitionHhFile($this);
 
         try {
-            if (! $file->open()) // Not an Ignition HH file, ignore
+            if (! $ignition_file->open()) { 
+                // Not an Ignition HH file, ignore
                 return;
+            }
 
-            while ($out = $file->convertNextHand()) {
-                echo $out;
+            while ($hand = $ignition_file->convertNextHand()) {
+                $this->ps_hh->store($hand);
             }
         } catch (IgnitionHhFileException $e) {
-            throw new Exception(sprintf("%s in file %s on line %d: %s", $e->getMessage(), $file->file['full_path'], $file->lineno, $file->line));
+            throw new Exception(sprintf("%s in file %s on line %d: %s", $e->getMessage(), $ignition_file->getIgnitionHhFileFullPath(), $ignition_file->getLineNo(), $ignition_file->getLine()));
+
         } catch (Ignition2PsHandException $e) {
-            throw new Exception(sprintf("%s in file %s on line %d", $e->getMessage(), $file->file['full_path'], $file->handlineno));
+            throw new Exception(sprintf("%s in file %s on line %d", $e->getMessage(), $ignition_file->getIgnitionHhFileFullPath(), $ignition_file->getHandLineNo()));
+
+        } catch (PsHhException $e) {
+            throw new Exception(sprintf("%s", $e->getMessage()));
         }
     }
 }

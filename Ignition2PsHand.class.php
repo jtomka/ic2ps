@@ -5,6 +5,14 @@
  */
 class Ignition2PsHand
 {
+    protected $tr_game = array(
+        'HOLDEM' => "Hold'em",
+    );
+
+    protected $tr_limit = array(
+        'No Limit' => "No Limit",
+    );
+
     const STREET_PREFLOP = 'preflop';
     const STREET_FLOP = 'flop';
     const STREET_TURN = 'turn';
@@ -21,6 +29,9 @@ class Ignition2PsHand
     // Hand's parent file
     protected $file;
  
+    // PokerStars format representation of hand
+    protected $ps_format;
+
     // All hand action across all streets
     private $all_action;
 
@@ -32,9 +43,64 @@ class Ignition2PsHand
         $this->file = $file;
     }
 
-    public function getFileAccountId()
+    public function getTimestamp()
     {
-        return $this->file->getAccountId();
+        return $this->info['timestamp'];
+    }
+
+    public function getPsAccountId()
+    {
+        return $this->file->getPsAccountId();
+    }
+
+    public function getPsTableName()
+    {
+        return $this->file->getPsTableName($this->info['table']);
+    }
+
+    public function getPsHandId()
+    {
+        return $this->file->getPsHandId($this->info['id']);
+    }
+
+    public function getFileSb()
+    {
+        return $this->file->getSb();
+    }
+
+    public function getFileBb()
+    {
+        return $this->file->getBb();
+    }
+
+    public function getSb()
+    {
+        if (isset($this->posts['sb']['chips']))
+            $sb = $this->posts['sb']['chips'];
+        else
+            $sb = $this->getFileSb();
+
+        return $sb;
+    }
+
+    public function getBb()
+    {
+        if (isset($this->posts['bb']['chips']))
+            $bb = $this->posts['bb']['chips'];
+        else
+            $bb = $this->getFileBb();
+
+        return $bb;
+    }
+
+    public function getPsLimit()
+    {
+        return $this->tr_limit[$this->info['limit']];
+    }
+
+    public function getPsGame()
+    {
+        return $this->tr_game[$this->info['game']];
     }
 
     /**
@@ -70,17 +136,6 @@ class Ignition2PsHand
      */
     protected function getHandInitText()
     {
-        $str_casino = 'PokerStars';
-        $str_handid_prefix = '99999';
-
-        $tr_game = array(
-            'HOLDEM' => "Hold'em",
-        );
-
-        $tr_limit = array(
-            'No Limit' => "No Limit",
-        );
-
         $tr_blind = array(
             'Small Blind' => 'small blind',
             'Big blind' => 'big blind',
@@ -89,12 +144,12 @@ class Ignition2PsHand
         $time_format = '%Y/%m/%d %H:%M:%S';
         $out = '';
 
-        $timestamp = mktime($this->info['hour'], $this->info['minute'], $this->info['second'],
+        $this->info['timestamp'] = mktime($this->info['hour'], $this->info['minute'], $this->info['second'],
                             $this->info['month'], $this->info['day'], $this->info['year']);
-        $aest_time = strftime($time_format, $timestamp);
-        $et_time = strftime($time_format, $timestamp - (15 * 60 * 60));
+        $aest_time = strftime($time_format, $this->info['timestamp']);
+        $et_time = strftime($time_format, $this->info['timestamp'] - (15 * 60 * 60));
 
-        $out .= sprintf("%s Hand #%d%d:  %s %s ($%.02f/$%.02f USD) - %s AEST [%s ET]\n", $str_casino, $str_handid_prefix, $this->info['id'], $tr_game[$this->info['game']], $tr_limit[$this->info['limit']], $this->file->history['sb'], $this->file->history['bb'], $aest_time, $et_time);
+        $out .= sprintf("PokerStars Hand #%d:  %s %s ($%.02f/$%.02f USD) - %s AEST [%s ET]\n", $this->getPsHandId(), $this->getPsGame(), $this->getPsLimit(), $this->getFileSb(), $this->getFileBb(), $aest_time, $et_time);
         
         return $out;
     }
@@ -131,7 +186,6 @@ class Ignition2PsHand
      */
     protected function getTableText()
     {
-        $str_table_prefix = 'Ignition';
         $str_table_size = '6-max'; // table size missing in ignition (or RING?)
 
         $out = '';
@@ -139,7 +193,7 @@ class Ignition2PsHand
         $button_seat = '';
         if ($dealer_seatno = $this->getDealerSeatno())
             $button_seat = sprintf(" Seat #%d is the button", $dealer_seatno);
-        $out .= sprintf("Table '%s%s' %s%s\n", $str_table_prefix, $this->info['table'], $str_table_size, $button_seat);
+        $out .= sprintf("Table '%s' %s%s\n", $this->getPsTableName(), $str_table_size, $button_seat);
 
         return $out;
     }
@@ -165,11 +219,9 @@ class Ignition2PsHand
      */
     protected function me($player)
     {
-        $str_id_prefix = 'Ignition';
-
         $me = $this->getMePlayer();
         if ($player == $me['player'])
-            $player = $str_id_prefix . $this->getFileAccountId();
+            $player = $this->getPsAccountId();
 
         return $player;
     }
@@ -433,12 +485,20 @@ class Ignition2PsHand
         return $out;
     }
 
+    public function getPsFormat()
+    {
+        return $this->ps_format;
+    }
+
     /**
      * Use collected Ignition Casino hand data to generate Poker Stars hand text
      */
-    public function getHandText()
+    public function convertToPsFormat()
     {
         debug('            %s', $this->info['id']);
+
+        if (isset($this->ps_format))
+            return $this;
 
         $out = '';
 
@@ -466,7 +526,11 @@ class Ignition2PsHand
 
         $out .= $this->getSummaryText();
 
-        return $out . "\n";
+        $out .= "\n";
+
+        $this->ps_format = $out;
+
+        return $this;
     }
 }
 

@@ -52,33 +52,91 @@ class IgnitionHhFile
     const STREET_TURN = 'turn';
     const STREET_RIVER = 'river';
 
+    protected $igntion2ps;
+
+    // Open file descriptor
+    protected $fh;
+
+    // Game information parsed from file name
+    protected $info;
+
+    // Current line number in file
+    protected $lineno;
+
+    // Current hand overall
+    protected $handno;
+
+    // Hand parser state
+    protected $state;
+
+    // Flag for parser to re-process current line
+    protected $rerun;
+
+    // End-of-file flag for current file
+    protected $eof;
+
     // Object where parser collects current hand's data, to be then converted
     protected $hand;
 
-    public function __construct($hh_file, $ignition2ps)
+    public function __construct($ignition2ps)
     {
-        $this->file = array(
-            'hh_dir' => $ignition2ps->ignition_hh_dir,
-            'account_dir' => $ignition2ps->account_dir,
-            'hh_file' => $hh_file,
-            'full_path' => $ignition2ps->ignition_hh_dir . '/' . $ignition2ps->account_dir . '/' . $hh_file,
-        );
+        $this->ignition2ps = $ignition2ps;
 
         $this->lineno = 0;
         $this->handno = 0;
         $this->state = self::STATE_INIT;
         $this->rerun = false;
         $this->eof = false;
+    }
+    
+    public function getIgnitionHhFile()
+    {
+        return $this->ignition2ps->getIgnitionHhFile();
+    }
 
-        $this->account['id'] = $ignition2ps->account_dir;
+    public function getIgnitionHhFileFullPath()
+    {
+        return $this->ignition2ps->getIgnitionHhDir()
+            . '/' . $this->ignition2ps->getIgnitionAccountDir()
+            . '/' . $this->ignition2ps->getIgnitionHhFile();
     }
 
     /**
      * Get Ignition hand history file account ID
      */
-    public function getAccountId()
+    public function getIgnitionAccountId()
     {
-        return $this->account['id'];
+        return $this->ignition2ps->getIgnitionAccountId();
+    }
+
+    public function getPsTableName($table)
+    {
+        return $this->ignition2ps->getPsTableName($table);
+    }
+
+    public function getPsHandId($hand_id)
+    {
+        return $this->ignition2ps->getPsHandId($hand_id);
+    }
+
+    public function getSb()
+    {
+        return $this->info['sb'];
+    }
+
+    public function getBb()
+    {
+        return $this->info['bb'];
+    }
+
+    public function getPsAccountId()
+    {
+        return $this->ignition2ps->getPsAccountId();
+    }
+
+    public function convertToPsFormat()
+    {
+        return $this->hand->convertToPsFormat();
     }
 
     /**
@@ -87,11 +145,11 @@ class IgnitionHhFile
     public function open()
     {
         $REGEX_FILENAME = '/^HH(?<year>\d{4})(?<month>\d{2})(?<day>\d{2})-(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2}) - (?<id>\d+) - (?<format>[A-Z]+) - \$(?<sb>[0-9.]+)-\$(?<bb>[0-9.]+) - (?<game>[A-Z]+) - (?<limit>[A-Z]+) - TBL No.(?<table>\d+)\.txt$/';
-        if (! preg_match($REGEX_FILENAME, $this->file['hh_file'], $this->history))
+        if (! preg_match($REGEX_FILENAME, $this->getIgnitionHhFile(), $this->info))
             return false; // ignore file
 
-        if (($this->fh = @fopen($this->file['full_path'], 'r')) === FALSE)
-            throw new Exception('Failed to open file ' . $this->file['full_path']);
+        if (($this->fh = @fopen($this->getIgnitionHhFileFullPath(), 'r')) === FALSE)
+            throw new Exception('Failed to open file ' . $this->getIgnitionHhFileFullPath());
 
         return true;
     }
@@ -167,12 +225,9 @@ class IgnitionHhFile
             self::STATE_RIVER => 'river',
         );
         $prop_name = $state_property[$this->state];
-        if (! isset($this->hand->$prop_name))
-            $this->hand->$prop_name = array();
-        $prop = &$this->hand->$prop_name;
 
         foreach ($action_regexs as $regex) {
-            if (preg_match($regex, $this->line, $prop['action'][])) {
+            if (preg_match($regex, $this->line, $this->hand->{$prop_name}['action'][])) {
                 return true;
             }
         }
@@ -221,12 +276,12 @@ class IgnitionHhFile
                 if (! empty($this->previous_state)) {
                     try {
                         // Convert complete hand
-                        $out = $this->hand->getHandText();
+                        $this->convertToPsFormat();
 
                         $this->previous_state = null;
                         $this->rerun = true;
 
-                        return $out;
+                        return $this->hand;
 
                     } catch (Exception $e) {
                         throw new Ignition2PsHandException('%s in hand #%s' . $e->getMessage(), $this->hand->info['id']);
