@@ -13,92 +13,20 @@ function debug($format, ...$args) {
         return call_user_func_array('err', func_get_args());
 }
 
-function me($player)
+class Ignition2Ps
 {
-    global $hand;
-    global $file;
-
-    $str_id_prefix = 'Ignition';
-
-    if (empty($hand->me)) {
-        foreach ($hand->seats as $seat) {
-            if (! empty($seat['me'])) {
-                $hand->me = $seat['player'];
-                break;
-            }
-        }
-    }
-
-    if ($player == $hand->me)
-        $player = $str_id_prefix . $file->account['id'];
-
-    return $player;
-}
-
-function process_actions($actions)
-{
-    $out = '';
-
-    $tr_action = array(
-        'Folds' => 'folds',
-        'Checks' => 'checks',
-        'Calls' => 'calls',
-        'Bets' => 'bets',
-        'Raises' => 'raises',
-        'All-in\(bet\)' => 'bets',
-        'All-in\(call\)' => 'calls',
-        'All-in\(raise\)' => 'raises',
-        'Return uncalled portion of bet' => '',
-    );
-
-    $last_bet_size = 0;
-    foreach ($actions as $action) {
-        if (empty($action['action'])) {
-            // skip everything else
-
-        } elseif (in_array($action['action'], array('Folds', 'Checks'))) {
-            $out .= sprintf("%s: %s\n", me($action['player']), $tr_action[$action['action']]);
-
-        } elseif (in_array($action['action'], array('Bets', 'Calls'))) {
-            $out .= sprintf("%s: %s $%.2f\n", me($action['player']), $tr_action[$action['action']], $action['chips']);
-
-        } elseif (in_array($action['action'], array('Raises', 'All-in\(raise\)'))) {
-            $out .= sprintf("%s: %s $%.2f to $%.2f%s\n", me($action['player']), $tr_action[$action['action']], $action['chips'], $action['to_chips'], ($action['action'] == 'Raises' ? '' : ' and is all-in'));
-
-        } elseif (in_array($action['action'], array('All-in'))) {
-            $out .= sprintf("%s: %s $%.2f and is all-in\n", me($action['player']), ($action['chips'] < $last_bet_size ? 'calls' : 'bets'), $action['chips']);
-
-        } elseif ($action['action'] == 'Return') {
-            $out .= sprintf("Uncalled bet ($%.02f) returned to %s\n", $action['chips'], me($action['player']));
-        }
-
-        if (! empty($action['action']['to_chips']))
-            $last_bet_size = $action['action']['to_chips'];
-        elseif (! empty($action['action']['chips']))
-            $last_bet_size = $action['action']['chips'];
-    }
-
-    return $out;
-}
-
-final class Ignition2Ps
-{
-    protected $stats;
-    protected $file;
     protected $hand;
 
     public function __construct($ignition_hh_dir)
     {
         $this->ignition_hh_dir = $ignition_hh_dir;
-
-        $this->file = new StdClass();
-        $this->hand = new StdClass();
     }
 
-    public function process()
+    /**
+     * Process entire Igntion hand history directory
+     */
+    public function processIgnitionHh()
     {
-        debug('ignition_hh_dir %s', $this->ignition_hh_dir);
-
         if (! is_dir($this->ignition_hh_dir) || ! is_readable($this->ignition_hh_dir))
             throw new Exception($this->ignition_hh_dir . " does not exist or is not a directory");
 
@@ -110,19 +38,18 @@ final class Ignition2Ps
                 if (! preg_match('/^\d+$/', $account_dir))
                     continue;
 
-                $this->process_account_dir($account_dir);
+                $this->processAccountDir($account_dir);
             }
 
             closedir($dh);
         }
     }
 
-    // e.g. HH20190304-161444 - 6484717 - RING - $0.02-$0.05 - HOLDEM - NL - TBL No.17948084.txt
-
-    protected function process_account_dir($account_dir)
+    /**
+     * Process Igntion hand history account directory
+     */
+    protected function processAccountDir($account_dir)
     {
-        debug('account_dir %s/%s', $this->ignition_hh_dir, $account_dir);
-
         $this->account_dir = $account_dir;
 
         if ($dh = opendir($this->ignition_hh_dir . '/' . $account_dir)) {
@@ -135,17 +62,18 @@ final class Ignition2Ps
                 if (! preg_match('/^\d+$/', $account_dir))
                     continue;
 
-                $this->process_file($hh_file);
+                $this->processFile($hh_file);
             }
 
             closedir($dh);
         }
     }
 
-    protected function process_file($hh_file)
+    /**
+     * Process individual Ignition hand history file
+     */
+    protected function processFile($hh_file)
     {
-        global $file;
-
         debug('file %s', $hh_file);
 
         $this->hh_file = $hh_file;
@@ -153,10 +81,15 @@ final class Ignition2Ps
         $file = new IgnitionHhFile($hh_file, $this);
 
         try {
-            $file->process();
+            if (! $file->open()) // Not an Ignition HH file, ignore
+                return;
+
+            while ($out = $file->convertHand()) {
+                echo $out;
+            }
         } catch (IgnitionHhFileException $e) {
             throw new Exception(sprintf("%s in file %s on line %d: %s", $e->getMessage(), $file->file['full_path'], $file->lineno, $file->line));
-        } catch (IgnitionHandException $e) {
+        } catch (Ignition2PsHandException $e) {
             throw new Exception(sprintf("%s in file %s on line %d", $e->getMessage(), $file->file['full_path'], $file->handlineno));
         }
     }
@@ -166,11 +99,6 @@ class IgnitionHhFileException extends Exception {}
 
 class IgnitionHhFile
 {
-    public $account; // Fix!! make protected
-    public $history; // Fix!! make protected
-    public $file; // Fix!! make protected
-
-
     const STATE_INIT = 'init';
     const STATE_SEATS = 'seats';
     const STATE_CARDS = 'cards';
@@ -179,7 +107,7 @@ class IgnitionHhFile
     const STATE_RIVER = 'river';
     const STATE_SUMMARY = 'summary';
 
-    private $state_str = array(
+    protected $state_str = array(
         self::STATE_INIT => 'Ignition Hand ',
         self::STATE_SEATS => 'Seat ',
         self::STATE_CARDS => '*** HOLE CARDS ***',
@@ -189,7 +117,7 @@ class IgnitionHhFile
         self::STATE_SUMMARY => '*** SUMMARY ***',
     );
 
-    private $state_tree = array(
+    protected $state_tree = array(
         self::STATE_INIT => array(
             self::STATE_SEATS,
         ),
@@ -226,10 +154,30 @@ class IgnitionHhFile
             'full_path' => $ignition2ps->ignition_hh_dir . '/' . $ignition2ps->account_dir . '/' . $hh_file,
         );
 
-        $file->account['id'] = $ignition2ps->account_dir;
+        $this->lineno = 0;
+        $this->handno = 0;
+        $this->state = self::STATE_INIT;
+        $this->rerun = false;
+        $this->eof = false;
+
+        $this->account['id'] = $ignition2ps->account_dir;
     }
 
-    function check_state_change()
+    /**
+     * Get Igntion hand history file account ID
+     */
+    public function getAccountId()
+    {
+        return $this->account['id'];
+    }
+
+    /**
+     * Update Igntion hand history file parser state
+     *
+     * Look for state change lines, check if state can be changed, change state and mark line for
+     * rerun when needed.
+     */
+    protected function updateState()
     {
         if (! array_key_exists($this->state, $this->state_tree))
             return false;
@@ -239,30 +187,65 @@ class IgnitionHhFile
                 $this->previous_state = $this->state;
                 $this->state = $state;
                 if (strlen($this->line) > strlen($this->state_str[$state]))
-                    $this->rerun = true; // Additional info on this line.
+                    $this->rerun = true; // There'll be additional info on this line
                 return true;
             }
         }
+
         return false;
     }
 
-    public function process() 
+    /**
+     * Parse Igntion hand street action lines
+     */
+    function parse_action($hand)
     {
-        global $hand;
+        $action_regexs = array(
+            'REGEX_ACTION' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Folds|Checks|Calls|Bets|Raises|All-in|All-in\(raise\)|Hand result(-Side pot)?)( \((auth|timeout|disconnect)\))?( \$(?<chips>[0-9.]+)( to \$(?<to_chips>[0-9.]+))?)?$/',
+            'REGEX_RETURN' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Return) uncalled portion of bet \$(?<chips>[0-9.]+)$/',
+            'REGEX_NOSHOW' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Does not show|Mucks|Folds)( & shows)? \[(?<card1>[2-9TJQKA][cdhs]) (?<card2>[2-9TJQKA][cdhs])\]( Show1 \[(?<show1>[2-9TJQKA][cdhs])\])?( \((?<ranking>.*)\))?$/',
+            'REGEX_SHOWDOWN' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Showdown) \[(?<card1>[2-9TJQKA][cdhs]) (?<card2>[2-9TJQKA][cdhs]) (?<card3>[2-9TJQKA][cdhs]) (?<card4>[2-9TJQKA][cdhs]) (?<card5>[2-9TJQKA][cdhs])\] \((?<ranking>.*)\)$/',
+            // ignore, not an actual showdown
+            'REGEX_SHOWDOWN_NOT' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Showdown\(High Card\))$/',
+        );
 
+        $state_property = array(
+            self::STATE_CARDS => 'preflop',
+            self::STATE_FLOP => 'flop',
+            self::STATE_TURN => 'turn',
+            self::STATE_RIVER => 'river',
+        );
+        $prop_name = $state_property[$this->state];
+        if (! isset($hand->$prop_name))
+            $hand->$prop_name = array();
+        $prop = &$hand->$prop_name;
+
+        foreach ($action_regexs as $regex) {
+            if (preg_match($regex, $this->line, $prop['action'][])) {
+                return true;
+            }
+        }
+
+        throw new IgnitionHhFileException('Unexpected action line');
+    }
+
+    public function open()
+    {
         $REGEX_FILENAME = '/^HH(?<year>\d{4})(?<month>\d{2})(?<day>\d{2})-(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2}) - (?<id>\d+) - (?<format>[A-Z]+) - \$(?<sb>[0-9.]+)-\$(?<bb>[0-9.]+) - (?<game>[A-Z]+) - (?<limit>[A-Z]+) - TBL No.(?<table>\d+)\.txt$/';
         if (! preg_match($REGEX_FILENAME, $this->file['hh_file'], $this->history))
-            return; // ignore file
+            return false; // ignore file
 
         if (($this->fh = @fopen($this->file['full_path'], 'r')) === FALSE)
             throw new Exception('Failed to open file ' . $this->file['full_path']);
 
-        $this->lineno = 0;
-        $this->handno = 0;
-        $this->state = self::STATE_INIT;
-        $this->rerun = false;
-        $this->eof = false;
+        return true;
+    }
 
+    /**
+     * Process Ignition hand history file
+     */
+    public function convertHand() 
+    {
         while ($this->rerun || ($this->line = fgets($this->fh)) || ($this->eof = feof($this->fh))) {
             if ($this->eof && $this->state != self::STATE_SUMMARY)
                 throw new IgnitionHhFileException('Unexpected end of file');
@@ -273,7 +256,7 @@ class IgnitionHhFile
                 $this->line = trim($this->line);
                 $this->lineno++;
 
-                if ($this->check_state_change())
+                if ($this->updateState())
                     continue;
             }
 
@@ -309,16 +292,21 @@ class IgnitionHhFile
                 if (! empty($this->previous_state)) {
                     /* Process previous hand */
                     try {
-                        $hand->process();
+                        $out = $hand->getPsHandText();
+
+                        $this->previous_state = null;
+                        $this->rerun = true;
+
+                        return $out;
                     } catch (Exception $e) {
-                        throw new IgnitionHandException('%s in hand #%s' . $e->getMessage(), $hand->info['id']);
+                        throw new Ignition2PsHandException('%s in hand #%s' . $e->getMessage(), $hand->info['id']);
                     }
                 }
 
                 if ($this->eof)
                     break;
 
-                $hand = new IgntionHand($this);
+                $hand = new Igntion2PsHand($this);
 
                 $REGEX_INIT = '/^(?<casino>Ignition) Hand #(?<id>\d+) TBL#(?<table>\d+) (?<game>[A-Z]+) (?<limit>[^-]+) - (?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2}) (?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})$/';   
                 if (! preg_match($REGEX_INIT, $this->line, $hand->info))
@@ -437,76 +425,89 @@ class IgnitionHhFile
                 break;
             }
 
-            if ($this->eof)
+            if ($this->eof) {
+                fclose($this->fh);
                 break;
-        };
-
-        fclose($this->fh);
-    }
-
-    /*
-    * Small Blind  [ME] : Folds
-    * UTG : Checks 
-    * Big Blind : Calls $0.45 
-    * Dealer : Raises $0.50 to $0.50
-    * UTG+2 : All-in(raise) $0.62 to $0.62
-    * UTG+1  [ME] : Return uncalled portion of bet $0.10
-    */
-    function parse_action($hand)
-    {
-        $action_regexs = array(
-            'REGEX_ACTION' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Folds|Checks|Calls|Bets|Raises|All-in|All-in\(raise\)|Hand result(-Side pot)?)( \((auth|timeout|disconnect)\))?( \$(?<chips>[0-9.]+)( to \$(?<to_chips>[0-9.]+))?)?$/',
-            'REGEX_RETURN' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Return) uncalled portion of bet \$(?<chips>[0-9.]+)$/',
-            'REGEX_NOSHOW' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Does not show|Mucks|Folds)( & shows)? \[(?<card1>[2-9TJQKA][cdhs]) (?<card2>[2-9TJQKA][cdhs])\]( Show1 \[(?<show1>[2-9TJQKA][cdhs])\])?( \((?<ranking>.*)\))?$/',
-            'REGEX_SHOWDOWN' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Showdown) \[(?<card1>[2-9TJQKA][cdhs]) (?<card2>[2-9TJQKA][cdhs]) (?<card3>[2-9TJQKA][cdhs]) (?<card4>[2-9TJQKA][cdhs]) (?<card5>[2-9TJQKA][cdhs])\] \((?<ranking>.*)\)$/',
-            // ignore, not an actual showdown
-            'REGEX_SHOWDOWN_NOT' => '/^(?<player>.*?)(?<me>  \[ME\])? : (?<action>Showdown\(High Card\))$/',
-        );
-
-        $state_property = array(
-            self::STATE_CARDS => 'preflop',
-            self::STATE_FLOP => 'flop',
-            self::STATE_TURN => 'turn',
-            self::STATE_RIVER => 'river',
-        );
-        $prop_name = $state_property[$this->state];
-        if (! isset($hand->$prop_name))
-            $hand->$prop_name = array();
-        $prop = &$hand->$prop_name;
-
-        foreach ($action_regexs as $regex) {
-            if (preg_match($regex, $this->line, $prop['action'][])) {
-                return true;
             }
         }
-
-        throw new IgnitionHhFileException('Unexpected action line');
     }
 }
 
-class IgnitionHandException extends Exception {}
+// Exceptions specific to hand conversion process
+class Ignition2PsHandException extends Exception {}
 
-class IgntionHand
+/**
+ * Igntion Casino to Poker Stars conversion
+ */
+class Igntion2PsHand
 {
+    const STREET_PREFLOP = 'preflop';
+    const STREET_FLOP = 'flop';
+    const STREET_TURN = 'turn';
+    const STREET_RIVER = 'river';
+ 
+    // Igntion to Poker Stars hand summary translation
+    private $tr_summary_action = array(
+        'Folded before the FLOP' => 'folded before Flop',
+        'Folded on the FLOP' => 'folded on the Flop',
+        'Folded on the TURN' => 'folded on the Turn',
+        'Folded on the RIVER' => 'folded on the River',
+    );
+
+    // Hand's parent file
     protected $file;
+ 
+    // All hand action across all streets
+    private $all_action;
+
+    // Player name to seat record association, mainly for hole cards
+    private $player_to_seat;
 
     public function __construct(IgnitionHhFile $file)
     {
         $this->file = $file;
     }
 
-    public function process()
+    public function getFileAccountId()
     {
-        debug('file %s', $this->file->file['full_path']);
-        debug('line %d', $this->file->lineno);
-        debug('hand %s', $this->info['id']);
+        return $this->file->getAccountId();
+    }
 
-        $out = '';
+    /**
+     * Get hand action across all streets
+     */
+    protected function getAllAction()
+    {
+        if (! isset($this->all_action)) {
+            $this->all_action = array_merge($this->preflop['action'], empty($this->flop['action']) ? array() : $this->flop['action'], empty($this->turn['action']) ? array() : $this->turn['action'], empty($this->river['action']) ? array() : $this->river['action']);
+        }
 
+        return $this->all_action;
+    }
+
+    /**
+     * Get spcific player's Seat record
+     */
+    protected function getPlayerSeat($player)
+    {
+        if (! isset($this->player_to_seat)) {
+            foreach ($this->preflop['hole_cards'] as $seat) {
+                if (empty($seat))
+                    continue;
+                $this->player_to_seat[$seat['player']] = $seat;
+            }
+        }
+
+        return  $this->player_to_seat[$player];
+    }
+
+    /**
+     * Generate Poker Stars hand initial line
+     */
+    protected function getHandInitText()
+    {
         $str_casino = 'PokerStars';
         $str_handid_prefix = '99999';
-        $str_table_size = '6-max'; // table size missing in ignition (or RING?)
-        $str_table_prefix = 'Ignition';
 
         $tr_game = array(
             'HOLDEM' => "Hold'em",
@@ -521,96 +522,246 @@ class IgntionHand
             'Big blind' => 'big blind',
         );
 
-        $tr_summary_position = array(
-            'Dealer' => 'button',
-            'Big Blind' => 'big blind',
-            'Small Blind' => 'small blind',
-        );
-
-        $tr_summary_action = array(
-            'Folded before the FLOP' => 'folded before Flop',
-            'Folded on the FLOP' => 'folded on the Flop',
-            'Folded on the TURN' => 'folded on the Turn',
-            'Folded on the RIVER' => 'folded on the River',
-        );
-
-        $timestamp = mktime($this->info['hour'], $this->info['minute'], $this->info['second'], $this->info['month'], $this->info['day'], $this->info['year']);
         $time_format = '%Y/%m/%d %H:%M:%S';
+        $out = '';
+
+        $timestamp = mktime($this->info['hour'], $this->info['minute'], $this->info['second'],
+                            $this->info['month'], $this->info['day'], $this->info['year']);
         $aest_time = strftime($time_format, $timestamp);
         $et_time = strftime($time_format, $timestamp - (15 * 60 * 60));
 
         $out .= sprintf("%s Hand #%d%d:  %s %s ($%.02f/$%.02f USD) - %s AEST [%s ET]\n", $str_casino, $str_handid_prefix, $this->info['id'], $tr_game[$this->info['game']], $tr_limit[$this->info['limit']], $this->file->history['sb'], $this->file->history['bb'], $aest_time, $et_time);
         
-        if (empty($this->dealer['seatno'])) {
+        return $out;
+    }
+
+    /**
+     * Get Dealer's seat number. If empty, use first free seat's number.
+     */
+    protected function getDealerSeatno()
+    {
+        if (! isset($this->dealer['seatno'])) {
             // Find first empty seat, that'll be the dealer.
             $i = 1;
             foreach ($this->seats as $seat) {
                 if (empty($seat))
                     continue;
 
-                if ($seat['seatno'] != $i) {
+                if ($seat['seatno'] != $i) { // Found a gap
                     $this->dealer['seatno'] = $i;
                     break;
                 }
 
                 $i++;
             }
+
+            if (! isset($this->dealer['seatno'])) // Use last
+                $this->dealer['seatno'] = $i;
         }
 
+        return $this->dealer['seatno'];
+    }
+
+    /**
+     * Generate Poker Stars hand table and dealer line
+     */
+    protected function getTableText()
+    {
+        $str_table_prefix = 'Ignition';
+        $str_table_size = '6-max'; // table size missing in ignition (or RING?)
+
+        $out = '';
+
         $button_seat = '';
-        if (! empty($this->dealer['seatno']))
-            $button_seat = sprintf(" Seat #%d is the button", $this->dealer['seatno']);
+        if ($dealer_seatno = $this->getDealerSeatno())
+            $button_seat = sprintf(" Seat #%d is the button", $dealer_seatno);
         $out .= sprintf("Table '%s%s' %s%s\n", $str_table_prefix, $this->info['table'], $str_table_size, $button_seat);
+
+        return $out;
+    }
+
+    /**
+     * Get seat record of the [ME] player
+     */
+    protected function getMePlayer()
+    {
+        if (! isset($this->me_player)) {
+            foreach ($this->preflop['hole_cards'] as $player) {
+                if (! empty($player['me'])) {
+                    $this->me_player = $player;
+                    break;
+                }
+            }
+        }
+        return $this->me_player;
+    }
+
+    /**
+     * Return player name with [ME] player's converted to Ignition<ID>
+     */
+    protected function me($player)
+    {
+        $str_id_prefix = 'Ignition';
+
+        $me = $this->getMePlayer();
+        if ($player == $me['player'])
+            $player = $str_id_prefix . $this->getFileAccountId();
+
+        return $player;
+    }
+
+    /**
+     * Generate Poker Stars seats lines and blind post lines
+     */
+    protected function getSeatsBlindsText()
+    {
+        $out = '';
 
         foreach ($this->seats as $seat) {
             if (empty($seat))
                 continue;
-            $out .= sprintf("Seat %d: %s ($%.02f in chips)\n", $seat['seatno'], me($seat['player']), $seat['chips']);
+            $out .= sprintf("Seat %d: %s ($%.02f in chips)\n", $seat['seatno'], $this->me($seat['player']), $seat['chips']);
         }
 
         if (! empty($this->posts['sb']))
-            $out .= sprintf("%s: posts small blind $%.02f\n", me($this->posts['sb']['player']), $this->posts['sb']['chips']);
+            $out .= sprintf("%s: posts small blind $%.02f\n", $this->me($this->posts['sb']['player']), $this->posts['sb']['chips']);
 
-        $out .= sprintf("%s: posts big blind $%.02f\n", me($this->posts['bb']['player']), $this->posts['bb']['chips']);
+        $out .= sprintf("%s: posts big blind $%.02f\n", $this->me($this->posts['bb']['player']), $this->posts['bb']['chips']);
+
+        return $out;
+    }
+
+    /**
+     * Generate Poker Stars hand hole cards (and preflop action) section
+     * XXX: Try to include hole cards for all players
+     */
+    protected function getHoleCardsText()
+    {
+        $out = '';
 
         $out .= sprintf("*** HOLE CARDS ***\n");
 
-        foreach ($this->preflop['hole_cards'] as $player) {
-            if (! empty($player['me'])) {
-                $me = $player;
-                break;
+        $player = $this->getMePlayer();
+        $out .= sprintf("Dealt to %s [%s %s]\n", $this->me($player['player']), $player['card1'], $player['card2']);
+
+        $out .= $this->getActionsText(self::STREET_PREFLOP);
+
+        return $out;
+    }
+
+    /**
+     * Generate Poker Stars hand street action lines
+     */
+    protected function getActionsText($street)
+    {
+        $out = '';
+
+        $tr_action = array(
+            'Folds' => 'folds',
+            'Checks' => 'checks',
+            'Calls' => 'calls',
+            'Bets' => 'bets',
+            'Raises' => 'raises',
+            'All-in(bet)' => 'bets',
+            'All-in(call)' => 'calls',
+            'All-in(raise)' => 'raises',
+            'Return uncalled portion of bet' => '',
+        );
+
+        $last_bet_size = 0;
+        if ($street == self::STREET_PREFLOP)
+            $last_bet_size = $this->posts['bb']['chips'];
+
+        foreach ($this->{$street}['action'] as $action) {
+            if (empty($action['action']))
+                continue;
+
+            if (in_array($action['action'], array('Folds', 'Checks'))) {
+                $out .= sprintf("%s: %s\n", $this->me($action['player']), $tr_action[$action['action']]);
+
+            } elseif (in_array($action['action'], array('Bets', 'Calls'))) {
+                $out .= sprintf("%s: %s $%.2f\n", $this->me($action['player']), $tr_action[$action['action']], $action['chips']);
+                if ($action['action'] == 'Bets')
+                    $last_bet_size = $action['chips'];
+
+            } elseif (in_array($action['action'], array('Raises', 'All-in(raise)'))) {
+                $out .= sprintf("%s: %s $%.2f to $%.2f%s\n", $this->me($action['player']), $tr_action[$action['action']], $action['chips'], $action['to_chips'], ($action['action'] == 'Raises' ? '' : ' and is all-in'));
+
+                $last_bet_size = $action['to_chips'];
+
+            } elseif (in_array($action['action'], array('All-in'))) {
+                if ($last_bet_size == 0)
+                    $allin_action = 'bets';
+                elseif ($action['chips'] <= $last_bet_size)
+                    $allin_action = 'calls';
+                else
+                    $allin_action = 'raises';
+
+                $out .= sprintf("%s: %s $%.2f and is all-in\n", $this->me($action['player']), $allin_action, $action['chips']);
+                $last_bet_size = $action['chips'];
+
+            } elseif ($action['action'] == 'Return') {
+                $out .= sprintf("Uncalled bet ($%.02f) returned to %s\n", $action['chips'], $this->me($action['player']));
+            } else {
+                // Ignore everything else
             }
         }
-        $out .= sprintf("Dealt to %s [%s %s]\n", me($me['player']), $me['card1'], $me['card2']);
 
-        $out .= process_actions($this->preflop['action']);
+        return $out;
+    }
+
+    protected function getFlopText()
+    {
+        $out = '';
 
         if (! empty($this->flop['cards'])) {
             $out .= sprintf("*** FLOP *** [%s %s %s]\n", $this->flop['cards'][1], $this->flop['cards'][2], $this->flop['cards'][3]);
 
             if (! empty($this->flop['action']))
-                $out .= process_actions($this->flop['action']);
+                $out .= $this->getActionsText(self::STREET_FLOP);
         }
+
+        return $out;
+    }
+
+    protected function getTurnText()
+    {
+        $out = '';
 
         if (! empty($this->turn['cards'])) {
             $out .= sprintf("*** TURN *** [%s %s %s] [%s]\n", $this->flop['cards'][1], $this->flop['cards'][2], $this->flop['cards'][3], $this->turn['cards'][1]);
 
             if (! empty($this->turn['action']))
-                $out .= process_actions($this->turn['action']);
+                $out .= $this->getActionsText(self::STREET_TURN);
         }
+
+        return $out;
+    }
+
+    protected function getRiverText()
+    {
+        $out = '';
 
         if (! empty($this->river['cards'])) {
             $out .= sprintf("*** RIVER *** [%s %s %s %s] [%s]\n", $this->flop['cards'][1], $this->flop['cards'][2], $this->flop['cards'][3], $this->turn['cards'][1], $this->river['cards'][1]);
 
             if (! empty($this->river['action']))
-                $out .= process_actions($this->river['action']);
+                $out .= $this->getActionsText(self::STREET_RIVER);
         }
 
-        $all_action = array_merge($this->preflop['action'], empty($this->flop['action']) ? array() : $this->flop['action'], empty($this->turn['action']) ? array() : $this->turn['action'], empty($this->river['action']) ? array() : $this->river['action']);
+        return $out;
+    }
 
+    /**
+     * Generate Poker Stars hand showdown section
+     */
+    protected function getShowdownText()
+    {
+        $out = '';
         $has_showdown = false;
         $showdown = array();
-        foreach ($all_action as $action) {
+
+        foreach ($this->getAllAction() as $action) {
             if (empty($action))
                 continue;
 
@@ -632,16 +783,65 @@ class IgntionHand
                             break;
                     }
 
-                    $out .= sprintf("%s: shows [%s %s] (%s)\n", me($action['player']), $seat['card1'], $seat['card2'], $action['ranking']);
+                    $out .= sprintf("%s: shows [%s %s] (%s)\n", $this->me($action['player']), $seat['card1'], $seat['card2'], $action['ranking']);
 
                 } elseif ($action['action'] == 'Mucks') {
-                    $out .= sprintf("%s: mucks hand\n", me($action['player']));
+                    $out .= sprintf("%s: mucks hand\n", $this->me($action['player']));
 
                 } elseif ($action['action'] == 'Hand result') {
-                    $out .= sprintf("%s collected $%.02f from pot\n", me($action['player']), $action['chips']);
+                    $out .= sprintf("%s collected $%.02f from pot\n", $this->me($action['player']), $action['chips']);
                 }
             }
         }
+
+        return $out;
+    }
+
+    /**
+     * Generate Poker Stars hand summary seat lines
+     */
+    protected function getSummarySeatsText()
+    {
+        $out = '';
+
+        foreach ($this->summary['seats'] as $action) {
+            if (empty($action))
+                continue;
+
+            $str_position = '';
+            if (isset($tr_summary_position[$action['player']]))
+                $str_position = ' (' . $tr_summary_position[$action['player']] . ')';
+
+            if (empty($action['action'])) {
+                $seat = $this->getPlayerSeat($action['player']);
+
+                $won_with = '';
+                if (! empty($action['ranking']))
+                    $won_with = sprintf(' with %s', $action['ranking']);
+
+                if (! $won_with) // make up something
+                    $won_with = ' with a pair of Deuces';
+
+                $result = sprintf('showed [%s %s] and won ($%.02f)%s', $seat['card1'], $seat['card2'], $action['chips'], $won_with);
+            } elseif ($action['action'] == 'Folded') {
+                $result = $this->tr_summary_action[$action['action_full']];
+            } elseif ($action['action'] == 'Mucked') {
+                $result = sprintf('mucked [%s %s]', $action['card1'], $action['card2']);
+            }
+
+            $out .= sprintf("Seat %d: %s%s %s\n", $action['seatno'], $this->me($action['player']), $str_position, $result);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Generate Poker Stars hand summary section
+     */
+    protected function getSummaryText()
+    {
+        $out = '';
+        $all_action = $this->getAllAction();
 
         $out .= "*** SUMMARY ***\n";
 
@@ -664,40 +864,47 @@ class IgntionHand
         if (! empty($this->summary['board']))
             $out .= sprintf("Board [%s]\n", implode(' ', array_slice($this->summary['board'], 1, 5)));
 
-        foreach ($this->summary['seats'] as $action) {
-            if (empty($action))
-                continue;
+        $out .= $this->getSummarySeatsText();
 
-            $str_position = '';
-            if (isset($tr_summary_position[$action['player']]))
-                $str_position = ' (' . $tr_summary_position[$action['player']] . ')';
+        return $out;
+    }
 
-            if (empty($action['action'])) {
-                foreach ($this->preflop['hole_cards'] as $seat) {
-                    if ($seat['player'] == $action['player'])
-                        break;
-                }
+    /**
+     * Use collected Igntion Casino hand data to generate Poker Stars hand text
+     */
+    public function getPsHandText()
+    {
+        debug('file %s', $this->file->file['full_path']);
+        debug('line %d', $this->file->lineno);
+        debug('hand %s', $this->info['id']);
 
-                $won_with = '';
-                if (! empty($action['ranking']))
-                    $won_with = sprintf(' with %s', $action['ranking']);
+        $out = '';
 
-                if (! $won_with) // make up something
-                    $won_with = ' with a pair of Deuces';
+        $tr_summary_position = array(
+            'Dealer' => 'button',
+            'Big Blind' => 'big blind',
+            'Small Blind' => 'small blind',
+        );
 
-                $result = sprintf('showed [%s %s] and won ($%.02f)%s', $seat['card1'], $seat['card2'], $action['chips'], $won_with);
-            } elseif ($action['action'] == 'Folded') {
-                $result = $tr_summary_action[$action['action_full']];
-            } elseif ($action['action'] == 'Mucked') {
-                $result = sprintf('mucked [%s %s]', $action['card1'], $action['card2']);
-            }
+        $out .= $this->getHandInitText();
 
-            $out .= sprintf("Seat %d: %s%s %s\n", $action['seatno'], me($action['player']), $str_position, $result);
-        }
+        $out .= $this->getTableText();
 
-        echo "\n" . $out . "\n";
+        $out .= $this->getSeatsBlindsText();
 
-        return true;
+        $out .= $this->getHoleCardsText();
+
+        $out .= $this->getFlopText();
+
+        $out .= $this->getTurnText();
+
+        $out .= $this->getRiverText();
+
+        $out .= $this->getShowdownText();
+
+        $out .= $this->getSummaryText();
+
+        return $out . "\n";
     }
 }
 
@@ -705,7 +912,7 @@ $ignition_hh_dir = getenv("HOME") . '/Ignition Casino Poker/Hand History';
 
 $ignition2ps = new Ignition2Ps($ignition_hh_dir);
 try {
-    $ignition2ps->process();
+    $ignition2ps->processIgnitionHh();
 } catch (Exception $e) {
     err($e->getMessage());
     exit(1);
