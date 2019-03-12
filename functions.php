@@ -10,12 +10,12 @@ function error($format, ...$args) {
 }
 
 function deb($format, ...$args) {
-    if (IGNITION2PS_DEBUG)
+    if (IC2PS_DEBUG)
         return call_user_func_array('err', func_get_args());
 }
 
 function debug($format, ...$args) {
-    if (IGNITION2PS_DEBUG)
+    if (IC2PS_DEBUG)
         return call_user_func_array('error', func_get_args());
 }
 

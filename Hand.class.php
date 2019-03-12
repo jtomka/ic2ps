@@ -38,7 +38,7 @@ class Hand
     // Player name to seat record association, mainly for hole cards
     private $player_to_seat;
 
-    public function __construct(IgnitionFile $file)
+    public function __construct(IcFile $file)
     {
         $this->file = $file;
     }

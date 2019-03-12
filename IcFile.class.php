@@ -1,6 +1,6 @@
 <?php
 
-class IgnitionFile
+class IcFile
 {
     const STATE_INIT = 'init';
     const STATE_SEATS = 'seats';
@@ -78,9 +78,9 @@ class IgnitionFile
     // Object where parser collects current hand's data, to be then converted
     protected $hand;
 
-    public function __construct($ignition2ps)
+    public function __construct(Ic2Ps $ic2ps)
     {
-        $this->ignition2ps = $ignition2ps;
+        $this->ic2ps = $ic2ps;
 
         $this->lineno = 0;
         $this->handno = 0;
@@ -91,32 +91,32 @@ class IgnitionFile
     
     public function getFilename()
     {
-        return $this->ignition2ps->getIgnitionHhFile();
+        return $this->ic2ps->getIcHhFilename();
     }
 
     public function getFullPath()
     {
-        return $this->ignition2ps->getIgnitionHhDir()
-            . '/' . $this->ignition2ps->getIgnitionAccountDir()
-            . '/' . $this->ignition2ps->getIgnitionHhFile();
+        return $this->ic2ps->getIcHhDir()
+            . '/' . $this->ic2ps->getIcAccountDir()
+            . '/' . $this->ic2ps->getIcHhFilename();
     }
 
     /**
      * Get Ignition hand history file account ID
      */
-    public function getIgnitionAccountId()
+    public function getIcAccountId()
     {
-        return $this->ignition2ps->getIgnitionAccountId();
+        return $this->ic2ps->getIcAccountId();
     }
 
     public function getPsTableName($table)
     {
-        return $this->ignition2ps->getPsTableName($table);
+        return $this->ic2ps->getPsTableName($table);
     }
 
     public function getPsHandId($hand_id)
     {
-        return $this->ignition2ps->getPsHandId($hand_id);
+        return $this->ic2ps->getPsHandId($hand_id);
     }
 
     public function getSb()
@@ -131,7 +131,7 @@ class IgnitionFile
 
     public function getPsAccountId()
     {
-        return $this->ignition2ps->getPsAccountId();
+        return $this->ic2ps->getPsAccountId();
     }
 
     public function convertToPsFormat()
@@ -232,14 +232,14 @@ class IgnitionFile
             }
         }
 
-        throw new IgnitionFileException('Unexpected action line');
+        throw new IcFileException('Unexpected action line');
     }
 
     protected function parseStreet($street, $regex)
     {
         if (empty($this->hand->{$street}['cards'])) {
             if (! preg_match($regex, $this->line, $this->hand->{$street}['cards']))
-                throw new IgnitionFileException(sprintf('Expecting %s line', strtoupper($street)));
+                throw new IcFileException(sprintf('Expecting %s line', strtoupper($street)));
             return;
         }
 
@@ -253,7 +253,7 @@ class IgnitionFile
     {
         while ($this->rerun || ($this->line = fgets($this->fh)) || ($this->eof = feof($this->fh))) {
             if ($this->eof && $this->state != self::STATE_SUMMARY)
-                throw new IgnitionFileException('Unexpected end of file');
+                throw new IcFileException('Unexpected end of file');
 
             if ($this->eof || $this->rerun) { // Processing same line after a state change.
                 $this->rerun = false;
@@ -296,7 +296,7 @@ class IgnitionFile
 
                 $REGEX_INIT = '/^(?<casino>Ignition) Hand #(?<id>\d+) TBL#(?<table>\d+) (?<game>[A-Z]+) (?<limit>[^-]+) - (?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2}) (?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})$/';   
                 if (! preg_match($REGEX_INIT, $this->line, $this->hand->info))
-                    throw new IgnitionFileException('Expecting init line');
+                    throw new IcFileException('Expecting init line');
 
                 $this->handno++;
                 $this->handlineno = $this->lineno;
@@ -334,7 +334,7 @@ class IgnitionFile
                 if (preg_match($REGEX_POST, $this->line, $this->hand->posts['other'][]))
                     break;
 
-                throw new IgnitionFileException('Unexpected init section line');
+                throw new IcFileException('Unexpected init section line');
 
 
             case self::STATE_CARDS: // PREFLOP
