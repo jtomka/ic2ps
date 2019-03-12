@@ -1,6 +1,6 @@
 <?php
 
-class IgnitionHhFile
+class IgnitionFile
 {
     const STATE_INIT = 'init';
     const STATE_SEATS = 'seats';
@@ -89,12 +89,12 @@ class IgnitionHhFile
         $this->eof = false;
     }
     
-    public function getIgnitionHhFile()
+    public function getFilename()
     {
         return $this->ignition2ps->getIgnitionHhFile();
     }
 
-    public function getIgnitionHhFileFullPath()
+    public function getFullPath()
     {
         return $this->ignition2ps->getIgnitionHhDir()
             . '/' . $this->ignition2ps->getIgnitionAccountDir()
@@ -145,11 +145,11 @@ class IgnitionHhFile
     public function open()
     {
         $REGEX_FILENAME = '/^HH(?<year>\d{4})(?<month>\d{2})(?<day>\d{2})-(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2}) - (?<id>\d+) - (?<format>[A-Z]+) - \$(?<sb>[0-9.]+)-\$(?<bb>[0-9.]+) - (?<game>[A-Z]+) - (?<limit>[A-Z]+) - TBL No.(?<table>\d+)\.txt$/';
-        if (! preg_match($REGEX_FILENAME, $this->getIgnitionHhFile(), $this->info))
+        if (! preg_match($REGEX_FILENAME, $this->getFilename(), $this->info))
             return false; // ignore file
 
-        if (($this->fh = @fopen($this->getIgnitionHhFileFullPath(), 'r')) === FALSE)
-            throw new Exception('Failed to open file ' . $this->getIgnitionHhFileFullPath());
+        if (($this->fh = @fopen($this->getFullPath(), 'r')) === FALSE)
+            throw new Exception('Failed to open file ' . $this->getFullPath());
 
         return true;
     }
@@ -232,14 +232,14 @@ class IgnitionHhFile
             }
         }
 
-        throw new IgnitionHhFileException('Unexpected action line');
+        throw new IgnitionFileException('Unexpected action line');
     }
 
     protected function parseStreet($street, $regex)
     {
         if (empty($this->hand->{$street}['cards'])) {
             if (! preg_match($regex, $this->line, $this->hand->{$street}['cards']))
-                throw new IgnitionHhFileException(sprintf('Expecting %s line', strtoupper($street)));
+                throw new IgnitionFileException(sprintf('Expecting %s line', strtoupper($street)));
             return;
         }
 
@@ -253,7 +253,7 @@ class IgnitionHhFile
     {
         while ($this->rerun || ($this->line = fgets($this->fh)) || ($this->eof = feof($this->fh))) {
             if ($this->eof && $this->state != self::STATE_SUMMARY)
-                throw new IgnitionHhFileException('Unexpected end of file');
+                throw new IgnitionFileException('Unexpected end of file');
 
             if ($this->eof || $this->rerun) { // Processing same line after a state change.
                 $this->rerun = false;
@@ -284,7 +284,7 @@ class IgnitionHhFile
                         return $this->hand;
 
                     } catch (Exception $e) {
-                        throw new Ignition2PsHandException('%s in hand #%s' . $e->getMessage(), $this->hand->info['id']);
+                        throw new HandException('%s in hand #%s' . $e->getMessage(), $this->hand->info['id']);
                     }
                 }
 
@@ -292,11 +292,11 @@ class IgnitionHhFile
                 if ($this->eof)
                     break;
 
-                $this->hand = new Ignition2PsHand($this);
+                $this->hand = new Hand($this);
 
                 $REGEX_INIT = '/^(?<casino>Ignition) Hand #(?<id>\d+) TBL#(?<table>\d+) (?<game>[A-Z]+) (?<limit>[^-]+) - (?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2}) (?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})$/';   
                 if (! preg_match($REGEX_INIT, $this->line, $this->hand->info))
-                    throw new IgnitionHhFileException('Expecting init line');
+                    throw new IgnitionFileException('Expecting init line');
 
                 $this->handno++;
                 $this->handlineno = $this->lineno;
@@ -334,7 +334,7 @@ class IgnitionHhFile
                 if (preg_match($REGEX_POST, $this->line, $this->hand->posts['other'][]))
                     break;
 
-                throw new IgnitionHhFileException('Unexpected init section line');
+                throw new IgnitionFileException('Unexpected init section line');
 
 
             case self::STATE_CARDS: // PREFLOP

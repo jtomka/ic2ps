@@ -3,7 +3,7 @@
 /**
  * Ignition Casino to Poker Stars conversion
  */
-class Ignition2PsHand
+class Hand
 {
     protected $tr_game = array(
         'HOLDEM' => "Hold'em",
@@ -38,7 +38,7 @@ class Ignition2PsHand
     // Player name to seat record association, mainly for hole cards
     private $player_to_seat;
 
-    public function __construct(IgnitionHhFile $file)
+    public function __construct(IgnitionFile $file)
     {
         $this->file = $file;
     }

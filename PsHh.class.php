@@ -10,7 +10,7 @@ class PsHh {
         $this->hand_store = array();
     }
 
-    public function store(Ignition2PsHand $hand)
+    public function store(Hand $hand)
     {
         // HH20170822 Riceia - $0.01-$0.02 - USD No Limit Hold'em.txt
         $ps_filename = sprintf("HH%s %s - $%.02f-$%.02f - USD %s %s.txt", strftime("%Y%m%d", $hand->getTimestamp()), $hand->getPsTableName(), $hand->getSb(), $hand->getBb(), $hand->getPsLimit(), $hand->getPsGame());

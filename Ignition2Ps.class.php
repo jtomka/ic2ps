@@ -135,7 +135,7 @@ class Ignition2Ps
 
         $this->ignition_hh_file = $ignition_hh_file;
 
-        $ignition_file = new IgnitionHhFile($this);
+        $ignition_file = new IgnitionFile($this);
 
         try {
             if (! $ignition_file->open()) { 
@@ -149,10 +149,10 @@ class Ignition2Ps
                 $i++;
             }
             debug(" (%d hands)", $i);
-        } catch (IgnitionHhFileException $e) {
+        } catch (IgnitionFileException $e) {
             throw new Exception(sprintf("%s in file %s on line %d: %s", $e->getMessage(), $ignition_file->getIgnitionHhFileFullPath(), $ignition_file->getLineNo(), $ignition_file->getLine()));
 
-        } catch (Ignition2PsHandException $e) {
+        } catch (HandException $e) {
             throw new Exception(sprintf("%s in file %s on line %d", $e->getMessage(), $ignition_file->getIgnitionHhFileFullPath(), $ignition_file->getHandLineNo()));
 
         } catch (PsHhException $e) {
