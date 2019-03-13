@@ -1,4 +1,6 @@
+#!/usr/bin/env php
 <?php
+
 const IC2PS_DEBUG = true;
 
 const IC_DEFAULT_HH_DIR = 'Ignition Casino Poker/Hand History';
