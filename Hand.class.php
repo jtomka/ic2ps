@@ -39,9 +39,9 @@ class Hand extends Base
 
     private $dealer_seat;
 
-    private $posts;
-
     private $players;
+
+    private $posts;
 
     private $community_cards;
 
@@ -55,8 +55,6 @@ class Hand extends Base
 
     public function __construct()
     {
-	$this->players = array();
-
 	$this->game_blinds = array();
 
 	$this->posts = array(
@@ -65,6 +63,8 @@ class Hand extends Base
 	    'other' => array(),
 	    'return' => array()
 	);
+
+	$this->players = array();
 
 	$this->community_cards = array(
 	    self::STREET_FLOP => array(),
@@ -81,8 +81,8 @@ class Hand extends Base
 
     public static function validateId($id)
     {
-        if (! is_string($id) || ! strlen($id))
-            throw InvalidArgumentException(sprintf("Invalid hand ID value `%s'", $id));
+        if (! (is_numeric($id) || is_string($id)) || ! strlen($id))
+            throw new InvalidArgumentException(sprintf("Invalid hand ID value", $id));
 
         return true;
     }
@@ -104,7 +104,7 @@ class Hand extends Base
     public static function validateTableId($table_id)
     {
         if (! is_string($table_id) || ! strlen($table_id))
-            throw InvalidArgumentException(sprintf("Invalid table ID value `%s'", $table_id));
+            throw new InvalidArgumentException(sprintf("Invalid table ID value `%s'", $table_id));
 
         return true;
     }
@@ -123,10 +123,10 @@ class Hand extends Base
 	return $this->table_id;
     }
 
-    public static function validateTimestap($timestamp)
+    public static function validateTimestamp($timestamp)
     {
         if (! is_int($timestamp) || $timestamp < 0)
-            throw InvalidArgumentException(sprintf("Incorrect timestamp `%s'", $timestamp));
+            throw new InvalidArgumentException(sprintf("Incorrect timestamp `%s'", $timestamp));
 
         return true;
     }
@@ -148,7 +148,7 @@ class Hand extends Base
     public static function validateGame($game)
     {
         if (! in_array($game, array(self::GAME_HOLDEM)))
-            throw InvalidArgumentException(sprintf("Unsupported game `%s'", $game));
+            throw new InvalidArgumentException(sprintf("Unsupported game `%s'", $game));
 
         return true;
     }
@@ -170,7 +170,7 @@ class Hand extends Base
     public static function validateLimit($limit)
     {
         if (! in_array($limit, array(self::LIMIT_NOLIMIT)))
-            throw InvalidArgumentException(sprintf("Unsupported limit type `%s'", $limit));
+            throw new InvalidArgumentException(sprintf("Unsupported limit type `%s'", $limit));
 
         return true;
     }
@@ -203,12 +203,22 @@ class Hand extends Base
         return $game_blinds[$blind];
     }
 
-    public function setGameBlind($blind, $chips)
+    public static function validateBlindType($blind_type)
     {
-        $this->validateBlindType($blind);
+        if (! in_array($blind_type, array(self::SMALL_BLIND, self::BIG_BLIND)))
+            throw new InvalidArgumentException(sprintf("Invalid blind type `%s'", $blind_type));
+
+        return true;
+    }
+
+    public function setGameBlind($blind_type, $chips)
+    {
+        $this->validateBlindType($blind_type);
         $this->validateChipsAmount($chips);
 
     	$this->game_blinds[$blind] = $chips;
+
+        return $this;
     }
 
     public function setGameSb($chips)
@@ -234,7 +244,7 @@ class Hand extends Base
     public static function validateTableSize($table_size)
     {
         if (! in_array($table_size, array(self::TABLE_SIZE_2, self::TABLE_SIZE_6, self::TABLE_SIZE_9)))
-            throw InvalidArgumentException(sprintf("Unsupported table size `%s'", $table_size));
+            throw new InvalidArgumentException(sprintf("Unsupported table size `%s'", $table_size));
 
         return true;
     }
@@ -316,7 +326,7 @@ class Hand extends Base
     public function setDealerSeat($dealer_seat)
     {
         if (! is_int($dealer_seat) || $dealer_seat < 1)
-            throw InvalidArgumentException(sprintf("Invalid dealer seat number `%i'", $dealer_seat));
+            throw new InvalidArgumentException(sprintf("Invalid dealer seat number `%i'", $dealer_seat));
 
     	$this->dealer_seat = $dealer_seat;
 
@@ -330,8 +340,8 @@ class Hand extends Base
 
     public static function validatePostType($post_type)
     {
-        if (! in_array($type, array(self::POST_SB, self::POST_BB, self::POST_OTHER, self::POST_RETURN)))
-            throw InvalidArgumentException(sprintf("Invalid post type `%s'", $type));
+        if (! in_array($post_type, array(self::POST_SB, self::POST_BB, self::POST_OTHER, self::POST_RETURN)))
+            throw new InvalidArgumentException(sprintf("Invalid post type `%s'", $post_type));
 
         return true;
     }
@@ -339,7 +349,7 @@ class Hand extends Base
     public static function validatePlayerName($name)
     {
         if (empty($name))
-            throw InvalidArgumentException("Empty player name");
+            throw new InvalidArgumentException("Empty player name");
 
         return true;
     }
@@ -347,7 +357,7 @@ class Hand extends Base
     public static function validateChipsAmount($chips)
     {
         if (! is_numeric($chips) || $chips < 0)
-            throw InvalidArgumentException(sprintf("Invalid chips amount, `%f'", $chips));
+            throw new InvalidArgumentException(sprintf("Invalid chips amount, `%f'", $chips));
 
         return true;
     }
@@ -379,7 +389,7 @@ class Hand extends Base
     public function getPost($type)
     {
         if (! in_array($type, $this->getPostTypes()))
-            throw InvalidArgumentException(sprintf("Invalid post type `%s'", $type));
+            throw new InvalidArgumentException(sprintf("Invalid post type `%s'", $type));
 
         $posts = $this->getPosts();
 
@@ -406,40 +416,37 @@ class Hand extends Base
     	return $this->getPost(self::POST_RETURN);
     }
 
-    private function getAllowedStreetsPostflop()
-    {
-        return array(self::STREET_FLOP, self::STREET_TURN, self::STREET_RIVER);
-    }
-
-    private function getAllowedStreets()
-    {
-        return array_merge(array(self::STREET_PREFLOP), $this->getAllowedStreetsPostflop());
-    }
-
     public static function validateCard($card)
     {
         if (empty($card))
-            throw InvalidArgumentException("Empty card string");
+            throw new InvalidArgumentException("Empty card string");
 
         if (! preg_match('/^[2-9TJQKA][cdhs]$/', $card))
-            throw InvalidArgumentException(sprintf("Invalid card string `%s'", $card));
+            throw new InvalidArgumentException(sprintf("Invalid card string `%s'", $card));
+    }
 
-        return true;
+    public static function validateStreetPostflop($street)
+    {
+        if (! in_array($street, array(self::STREET_FLOP, self::STREET_TURN, self::STREET_RIVER)))
+            throw new InvalidArgumentException(sprintf("Invalid street `%s'", $street));
+    }
+
+    public static function validateStreetCardCount($street, $card_count)
+    {
+        if (($street == self::STREET_FLOP && $card_count != 3)
+         || ($street == self::STREET_TURN && $card_count != 1)
+         || ($street == self::STREET_RIVER && $card_count != 1)) {
+            throw new InvalidArgumentException(sprintf("Invalid nuber of community cards (%d) for street `%s'", $card_count, $street));
+        }
     }
 
     public function setCommunityCards($street, $cards)
     {
-        if (! in_array($street, $this->getAllowedStreetsPostflop()))
-            throw InvalidArgumentException(sprintf("Invalid street `%s'", $street));
-
-        if (($street == self::STREET_FLOP && count($cards) != 3)
-         || ($street == self::STREET_TURN && count($cards) != 1)
-         || ($street == self::STREET_RIVER && count($cards) != 1)) {
-            throw InvalidArgumentException(sprintf("Invalid nuber of community cards (%d) for street `%s'", count($cards), $street));
-        }
+        $this->validateStreetPostflop($street);
+        $this->validateStreetCardCount($street, count($cards));
 
         foreach ($cards as $c)
-            validateCard($c);
+            $this->validateCard($c);
 
     	$this->community_cards[$street] = $cards;
 
@@ -549,7 +556,7 @@ class Hand extends Base
     public static function validatePotNumber($i)
     {
         if (! is_int($i) || $i < 0)
-            throw InvalidArgumentException(sprintf("Invalid pot number `%i'", $i));
+            throw new InvalidArgumentException(sprintf("Invalid pot number `%i'", $i));
 
         return true;
     }

@@ -29,7 +29,7 @@ class Action
     {
         if (! in_array($street, array(Hand::STREET_PREFLOP, Hand::STREET_FLOP,
                 Hand::STREET_TURN, HAND::STREET_RIVER)))
-            throw InvalidArgumentException(sprintf('Invalid street value `%s\'', $street));
+            throw new InvalidArgumentException(sprintf('Invalid street value `%s\'', $street));
 
         $this->street = $street;
 
@@ -44,7 +44,7 @@ class Action
     public function setPlayer(string $player)
     {
         if (empty($player))
-            throw InvalidArgumentException("Empty player name");
+            throw new InvalidArgumentException("Empty player name");
 
         $this->player = $player;
 
@@ -59,7 +59,7 @@ class Action
     public function setAction(string $action)
     {
 	if (! in_array($action, array(self::FOLD, self::CHECK, self::CALL, self::BET, self::RAISE, self::RETRN, self::MUCK, self::RESULT, self::SHOWDOWN)))
-	    throw InvalidArgumentException(sprintf("Invalid action value `%s'", $action));
+	    throw new InvalidArgumentException(sprintf("Invalid action value `%s'", $action));
 
         $this->action = $action;
 

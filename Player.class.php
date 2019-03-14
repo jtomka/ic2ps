@@ -32,7 +32,7 @@ class Player extends Base
     public function setSeat($seat)
     {
         if (! is_int($seat) || $seat < 1)
-            throw InvalidArgumentException(sprintf("Invalid seat number `%i'", $seat));
+            throw new InvalidArgumentException(sprintf("Invalid seat number `%i'", $seat));
 
         $this->seat = $seat;
 
@@ -44,12 +44,12 @@ class Player extends Base
         return $this->seat;
     }
 
-    public function setCards($card1, $card2)
+    public function setCards($cards)
     {
-        Hand::validateCard($card1);
-        Hand::validateCard($card2);
+        foreach ($cards as $c)
+            Hand::validateCard($c);
 
-        $this->cards = array($card1, $card2);
+        $this->cards = $cards;
 
         return $this;
     }
@@ -64,7 +64,7 @@ class Player extends Base
         return (bool) $this->is_hero;
     }
 
-    public function setIsHero($is_hero)
+    public function setIsHero($is_hero = true)
     {
         $this->is_hero = (bool) $is_hero;
 
