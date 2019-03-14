@@ -1,6 +1,6 @@
 <?php
 
-class IcFile
+class IcParser extends Base implements ParserInterface
 {
     const STATE_INIT = 'init';
     const STATE_SEATS = 'seats';
@@ -52,13 +52,16 @@ class IcFile
     const STREET_TURN = 'turn';
     const STREET_RIVER = 'river';
 
-    protected $igntion2ps;
+    protected $filename;
 
     // Open file descriptor
     protected $fh;
 
     // Game information parsed from file name
     protected $info;
+
+    // Current line number in file
+    protected $line;
 
     // Current line number in file
     protected $lineno;
@@ -78,10 +81,14 @@ class IcFile
     // Object where parser collects current hand's data, to be then converted
     protected $hand;
 
-    public function __construct(Ic2Ps $ic2ps)
+    public function __construct()
     {
-        $this->ic2ps = $ic2ps;
+        $this->initObject();
+    }
 
+    protected function initObject()
+    {
+        $this->line = null;
         $this->lineno = 0;
         $this->handno = 0;
         $this->state = self::STATE_INIT;
@@ -91,67 +98,17 @@ class IcFile
     
     public function getFilename()
     {
-        return $this->ic2ps->getIcHhFilename();
+        return $this->filename;
     }
 
-    public function getFullPath()
+    public function getLine()
     {
-        return $this->ic2ps->getIcHhDir()
-            . '/' . $this->ic2ps->getIcAccountDir()
-            . '/' . $this->ic2ps->getIcHhFilename();
+        return $this->line;
     }
 
-    /**
-     * Get Ignition hand history file account ID
-     */
-    public function getIcAccountId()
+    public function getLineNo()
     {
-        return $this->ic2ps->getIcAccountId();
-    }
-
-    public function getPsTableName($table)
-    {
-        return $this->ic2ps->getPsTableName($table);
-    }
-
-    public function getPsHandId($hand_id)
-    {
-        return $this->ic2ps->getPsHandId($hand_id);
-    }
-
-    public function getSb()
-    {
-        return $this->info['sb'];
-    }
-
-    public function getBb()
-    {
-        return $this->info['bb'];
-    }
-
-    public function getPsAccountId()
-    {
-        return $this->ic2ps->getPsAccountId();
-    }
-
-    public function convertToPsFormat()
-    {
-        return $this->hand->convertToPsFormat();
-    }
-
-    /**
-     * Check if file is an Ignition hand history and open it for reading
-     */
-    public function open()
-    {
-        $REGEX_FILENAME = '/^HH(?<year>\d{4})(?<month>\d{2})(?<day>\d{2})-(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2}) - (?<id>\d+) - (?<format>[A-Z]+) - \$(?<sb>[0-9.]+)-\$(?<bb>[0-9.]+) - (?<game>[A-Z]+) - (?<limit>[A-Z]+) - TBL No.(?<table>\d+)\.txt$/';
-        if (! preg_match($REGEX_FILENAME, $this->getFilename(), $this->info))
-            return false; // ignore file
-
-        if (($this->fh = @fopen($this->getFullPath(), 'r')) === FALSE)
-            throw new Exception('Failed to open file ' . $this->getFullPath());
-
-        return true;
+        return $this->lineno;
     }
 
     /**
@@ -232,28 +189,40 @@ class IcFile
             }
         }
 
-        throw new IcFileException('Unexpected action line');
+        throw new ParserException('Unexpected action line');
     }
 
     protected function parseStreet($street, $regex)
     {
         if (empty($this->hand->{$street}['cards'])) {
             if (! preg_match($regex, $this->line, $this->hand->{$street}['cards']))
-                throw new IcFileException(sprintf('Expecting %s line', strtoupper($street)));
+                throw new ParserException(sprintf('Expecting %s line', strtoupper($street)));
             return;
         }
 
         $this->parseAction();
     }
 
+    public function setFilename() 
+    {
+        if (($this->fh = @fopen($filename(), 'r')) === FALSE)
+            throw new ParserException('Failed to open file ' . $filename);
+
+        $this->filename = $filename;
+        $this->initObject();
+    }
+
     /**
      * Parse Ignition hand history file and return next hand converted to Poker Stars format
      */
-    public function convertNextHand() 
+    public function parseNextHand() 
     {
+        if (! is_resource($this->fh))
+            throw ParserException('No file set to parse');
+
         while ($this->rerun || ($this->line = fgets($this->fh)) || ($this->eof = feof($this->fh))) {
             if ($this->eof && $this->state != self::STATE_SUMMARY)
-                throw new IcFileException('Unexpected end of file');
+                throw new ParserException('Unexpected end of file');
 
             if ($this->eof || $this->rerun) { // Processing same line after a state change.
                 $this->rerun = false;
@@ -275,9 +244,6 @@ class IcFile
 
                 if (! empty($this->previous_state)) {
                     try {
-                        // Convert complete hand
-                        $this->convertToPsFormat();
-
                         $this->previous_state = null;
                         $this->rerun = true;
 
@@ -292,14 +258,13 @@ class IcFile
                 if ($this->eof)
                     break;
 
-                $this->hand = new Hand($this);
+                $this->hand = new Hand();
 
                 $REGEX_INIT = '/^(?<casino>Ignition) Hand #(?<id>\d+) TBL#(?<table>\d+) (?<game>[A-Z]+) (?<limit>[^-]+) - (?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2}) (?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})$/';   
                 if (! preg_match($REGEX_INIT, $this->line, $this->hand->info))
-                    throw new IcFileException('Expecting init line');
+                    throw new ParserException('Expecting init line');
 
                 $this->handno++;
-                $this->handlineno = $this->lineno;
 
                 break;
 
@@ -334,7 +299,7 @@ class IcFile
                 if (preg_match($REGEX_POST, $this->line, $this->hand->posts['other'][]))
                     break;
 
-                throw new IcFileException('Unexpected init section line');
+                throw new ParserException('Unexpected init section line');
 
 
             case self::STATE_CARDS: // PREFLOP
