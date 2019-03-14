@@ -15,40 +15,43 @@ class Hand extends Base
     const TABLE_SIZE_6 = 6;
     const TABLE_SIZE_9 = 9;
 
-    const POST_SB = 'sb';
-    const POST_BB = 'sb';
+    const SMALL_BLIND = 'sb';
+    const BIG_BLIND = 'bb';
+
+    const POST_SB = self::SMALL_BLIND;
+    const POST_BB = self::BIG_BLIND;
     const POST_OTHER = 'other';
     const POST_RETURN = 'return';
 
-    protected $id;
+    private $id;
 
-    protected $table_id;
+    private $table_id;
 
-    protected $timestamp;
+    private $timestamp;
 
-    protected $game;
+    private $game;
 
-    protected $limit;
+    private $limit;
 
-    protected $table_size;
+    private $table_size;
 
-    protected $game_blinds;
+    private $game_blinds;
 
-    protected $dealer_seat;
+    private $dealer_seat;
 
-    protected $posts;
+    private $posts;
 
-    protected $players;
+    private $players;
 
-    protected $community_cards;
+    private $community_cards;
 
-    protected $all_action;
+    private $all_action;
 
-    protected $pots;
+    private $pots;
 
-    protected $rake;
+    private $rake;
 
-    protected $summary_seats;
+    private $summary_seats;
 
     public function __construct()
     {
@@ -76,8 +79,18 @@ class Hand extends Base
 	$this->summary_seats = array();
     }
 
+    public static function validateId($id)
+    {
+        if (! is_string($id) || ! strlen($id))
+            throw InvalidArgumentException(sprintf("Invalid hand ID value `%s'", $id));
+
+        return true;
+    }
+
     public function setId($id)
     {
+        $this->validateId($id);
+
 	$this->id = $id;
 
 	return $this;
@@ -88,8 +101,18 @@ class Hand extends Base
 	return $this->id;
     }
 
+    public static function validateTableId($table_id)
+    {
+        if (! is_string($table_id) || ! strlen($table_id))
+            throw InvalidArgumentException(sprintf("Invalid table ID value `%s'", $table_id));
+
+        return true;
+    }
+
     public function setTableId($table_id)
     {
+        $this->validateTableId($table_id);
+
 	$this->table_id = $table_id;
 
 	return $this;
@@ -100,8 +123,18 @@ class Hand extends Base
 	return $this->table_id;
     }
 
+    public static function validateTimestap($timestamp)
+    {
+        if (! is_int($timestamp) || $timestamp < 0)
+            throw InvalidArgumentException(sprintf("Incorrect timestamp `%s'", $timestamp));
+
+        return true;
+    }
+
     public function setTimestamp($timestamp)
     {
+        $this->validateTimestamp($timestamp);
+
 	$this->timestamp = $timestamp;
 
 	return $this;
@@ -112,8 +145,18 @@ class Hand extends Base
     	return $this->timestamp;
     }
 
+    public static function validateGame($game)
+    {
+        if (! in_array($game, array(self::GAME_HOLDEM)))
+            throw InvalidArgumentException(sprintf("Unsupported game `%s'", $game));
+
+        return true;
+    }
+
     public function setGame($game)
     {
+        $this->validateGame($game);
+
 	$this->game = $game;
 
 	return $this;
@@ -124,8 +167,18 @@ class Hand extends Base
 	return $this->game;
     }
 
+    public static function validateLimit($limit)
+    {
+        if (! in_array($limit, array(self::LIMIT_NOLIMIT)))
+            throw InvalidArgumentException(sprintf("Unsupported limit type `%s'", $limit));
+
+        return true;
+    }
+
     public function setLimit($limit)
     {
+        $this->validateLimit($limit);
+
     	$this->limit = $limit;
 
 	return $this;
@@ -141,32 +194,55 @@ class Hand extends Base
 	return $this->game_blinds;
     }
 
-    public function setGameSb($sb)
+    public function getGameBlind($blind)
     {
-    	$this->game_blinds['sb'] = $sb;
+        $this->validateBlindType($blind);
 
-	return $this;
+        $game_blinds = $this->getGameBlinds();
+
+        return $game_blinds[$blind];
+    }
+
+    public function setGameBlind($blind, $chips)
+    {
+        $this->validateBlindType($blind);
+        $this->validateChipsAmount($chips);
+
+    	$this->game_blinds[$blind] = $chips;
+    }
+
+    public function setGameSb($chips)
+    {
+    	return $this->setGameBlind(self::SMALL_BLIND, $chips);
     }
 
     public function getGameSb()
     {
-	return $this->game_blinds['sb'];
+        return $this->getGameBlind(self::SMALL_BLIND);
     }
 
-    public function setGameBb($bb)
+    public function setGameBb($chips)
     {
-    	$this->game_blinds['bb'] = $bb;
-
-	return $this;
+    	return $this->setGameBlind(self::BIG_BLIND, $chips);
     }
 
     public function getGameBb()
     {
-	return $this->game_blinds['bb'];
+        return $this->getGameBlind(self::BIG_BLIND);
+    }
+
+    public static function validateTableSize($table_size)
+    {
+        if (! in_array($table_size, array(self::TABLE_SIZE_2, self::TABLE_SIZE_6, self::TABLE_SIZE_9)))
+            throw InvalidArgumentException(sprintf("Unsupported table size `%s'", $table_size));
+
+        return true;
     }
 
     public function setTableSize($table_size)
     {
+        $this->validateTableSize($table_size);
+
 	$this->table_size = $table_size;
 
 	return $this;
@@ -192,6 +268,9 @@ class Hand extends Base
 
     public function getPlayer($name)
     {
+        if (! isset($this->players[$name]))
+            return false;
+
     	return $this->players[$name];
     }
 
@@ -236,6 +315,9 @@ class Hand extends Base
 
     public function setDealerSeat($dealer_seat)
     {
+        if (! is_int($dealer_seat) || $dealer_seat < 1)
+            throw InvalidArgumentException(sprintf("Invalid dealer seat number `%i'", $dealer_seat));
+
     	$this->dealer_seat = $dealer_seat;
 
 	return $this;
@@ -246,8 +328,36 @@ class Hand extends Base
 	return $this->dealer_seat;
     }
 
+    public static function validatePostType($post_type)
+    {
+        if (! in_array($type, array(self::POST_SB, self::POST_BB, self::POST_OTHER, self::POST_RETURN)))
+            throw InvalidArgumentException(sprintf("Invalid post type `%s'", $type));
+
+        return true;
+    }
+
+    public static function validatePlayerName($name)
+    {
+        if (empty($name))
+            throw InvalidArgumentException("Empty player name");
+
+        return true;
+    }
+
+    public static function validateChipsAmount($chips)
+    {
+        if (! is_numeric($chips) || $chips < 0)
+            throw InvalidArgumentException(sprintf("Invalid chips amount, `%f'", $chips));
+
+        return true;
+    }
+
     public function addPost($type, $player, $chips)
     {
+        $this->validatePostType($type);
+        $this->validatePlayerName($player);
+        $this->validateChipsAmount($chips);
+
 	$post = array(
 	    'player' => $player,
 	    'chips' => $chips
@@ -266,28 +376,71 @@ class Hand extends Base
     	return $this->posts;
     }
 
+    public function getPost($type)
+    {
+        if (! in_array($type, $this->getPostTypes()))
+            throw InvalidArgumentException(sprintf("Invalid post type `%s'", $type));
+
+        $posts = $this->getPosts();
+
+    	return $posts[$type];
+    }
+
     public function getPostSb()
     {
-    	return $this->posts[self::POST_SB];
+    	return $this->getPost(self::POST_SB);
     }
 
     public function getPostBb()
     {
-    	return $this->posts[self::POST_BB];
+    	return $this->getPost(self::POST_BB);
     }
 
     public function getPostOther()
     {
-    	return $this->posts[self::POST_OTHER];
+    	return $this->getPost(self::POST_OTHER);
     }
 
     public function getPostReturn()
     {
-    	return $this->posts[self::POST_RETURN];
+    	return $this->getPost(self::POST_RETURN);
+    }
+
+    private function getAllowedStreetsPostflop()
+    {
+        return array(self::STREET_FLOP, self::STREET_TURN, self::STREET_RIVER);
+    }
+
+    private function getAllowedStreets()
+    {
+        return array_merge(array(self::STREET_PREFLOP), $this->getAllowedStreetsPostflop());
+    }
+
+    public static function validateCard($card)
+    {
+        if (empty($card))
+            throw InvalidArgumentException("Empty card string");
+
+        if (! preg_match('/^[2-9TJQKA][cdhs]$/', $card))
+            throw InvalidArgumentException(sprintf("Invalid card string `%s'", $card));
+
+        return true;
     }
 
     public function setCommunityCards($street, $cards)
     {
+        if (! in_array($street, $this->getAllowedStreetsPostflop()))
+            throw InvalidArgumentException(sprintf("Invalid street `%s'", $street));
+
+        if (($street == self::STREET_FLOP && count($cards) != 3)
+         || ($street == self::STREET_TURN && count($cards) != 1)
+         || ($street == self::STREET_RIVER && count($cards) != 1)) {
+            throw InvalidArgumentException(sprintf("Invalid nuber of community cards (%d) for street `%s'", count($cards), $street));
+        }
+
+        foreach ($cards as $c)
+            validateCard($c);
+
     	$this->community_cards[$street] = $cards;
 
 	return $this;
@@ -295,23 +448,17 @@ class Hand extends Base
 
     public function setFlopCommunityCards($cards)
     {
-    	$this->community_cards[self::STREET_FLOP] = $cards;
-
-	return $this;
+    	return $this->setCommunityCards(self::STREET_FLOP, $cards);
     }
 
     public function setTurnCommunityCards($cards)
     {
-    	$this->community_cards[self::STREET_TURN] = $cards;
-
-	return $this;
+    	return $this->setCommunityCards(self::STREET_TURN, $cards);
     }
 
     public function setRiverCommunityCards($cards)
     {
-    	$this->community_cards[self::STREET_RIVER] = $cards;
-
-	return $this;
+    	return $this->setCommunityCards(self::STREET_RIVER, $cards);
     }
 
     public function getAllCommunityCards()
@@ -375,14 +522,18 @@ class Hand extends Base
     	return $street_action;
     }
 
+    private function getShowdownActionActions()
+    {
+        return array(Action::SHOWDOWN, Action::MUCK, Action::RESULT);
+    }
+
     public function getShowdownAction()
     {
     	$has_showdown = false;
 	$showdown_action = array();
 
 	foreach ($this->getAllAction() as $action) {
-	    if (in_array($action->getAction(), 
-		    array(Action::SHOWDOWN, Action::MUCK, Action::RESULT))) {
+	    if (in_array($action->getAction(), $this->getShowdownActionActions())) {
 		if ($action->getAction() == Action::SHOWDOWN)
 		    $has_showdown = true;
 		$showdown_action[] = $action;
@@ -395,8 +546,19 @@ class Hand extends Base
 	return $showdown_action;
     }
 
+    public static function validatePotNumber($i)
+    {
+        if (! is_int($i) || $i < 0)
+            throw InvalidArgumentException(sprintf("Invalid pot number `%i'", $i));
+
+        return true;
+    }
+
     public function setPot($i, $chips)
     {
+        $this->validatePotNumber($i);
+        $this->validateChipsAmount($chips);
+
     	$this->pots[$i] = $chips;
 
 	return $this;
@@ -419,7 +581,9 @@ class Hand extends Base
 
     public function getPot($i)
     {
-    	return $this->getAllPots()[$i];
+        $pots = $this->getAllPots();
+
+    	return $pots[$i];
     }
 
     public function getMainPot()
@@ -439,6 +603,8 @@ class Hand extends Base
 
     public function setRake($rake)
     {
+        $this->validateChipsAmount($rake);
+
     	$this->rake = $rake;
 
 	return $this;

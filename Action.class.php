@@ -13,20 +13,24 @@ class Action
     const RESULT = 'result';
     const SHOWDOWN = 'showdown';
     
-    protected $street;
+    private $street;
 
-    protected $player;
+    private $player;
 
-    protected $action;
+    private $action;
 
-    protected $chips;
+    private $chips;
 
-    protected $to_chips;
+    private $to_chips;
 
-    protected $is_all_in;
+    private $is_all_in;
 
     public function setStreet(string $street)
     {
+        if (! in_array($street, array(Hand::STREET_PREFLOP, Hand::STREET_FLOP,
+                Hand::STREET_TURN, HAND::STREET_RIVER)))
+            throw InvalidArgumentException(sprintf('Invalid street value `%s\'', $street));
+
         $this->street = $street;
 
         return $this;
@@ -39,6 +43,9 @@ class Action
 
     public function setPlayer(string $player)
     {
+        if (empty($player))
+            throw InvalidArgumentException("Empty player name");
+
         $this->player = $player;
 
         return $this;
@@ -51,6 +58,9 @@ class Action
 
     public function setAction(string $action)
     {
+	if (! in_array($action, array(self::FOLD, self::CHECK, self::CALL, self::BET, self::RAISE, self::RETRN, self::MUCK, self::RESULT, self::SHOWDOWN)))
+	    throw InvalidArgumentException(sprintf("Invalid action value `%s'", $action));
+
         $this->action = $action;
 
         return $this;
@@ -63,6 +73,8 @@ class Action
 
     public function setChips(float $chips)
     {
+        Hand::validateChipsAmount($chips);
+
         $this->chips = $chips;
 
         return $this;
@@ -75,6 +87,8 @@ class Action
 
     public function setToChips(float $to_chips)
     {
+        Hand::validateChipsAmount($to_chips);
+
         $this->to_chips = $to_chips;
 
         return $this;

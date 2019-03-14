@@ -17,6 +17,8 @@ class Player extends Base
 
     public function setName($name)
     {
+        Hand::validatePlayerName($name);
+
         $this->name = $name;
 
         return $this;
@@ -29,6 +31,9 @@ class Player extends Base
 
     public function setSeat($seat)
     {
+        if (! is_int($seat) || $seat < 1)
+            throw InvalidArgumentException(sprintf("Invalid seat number `%i'", $seat));
+
         $this->seat = $seat;
 
         return $this;
@@ -41,6 +46,9 @@ class Player extends Base
 
     public function setCards($card1, $card2)
     {
+        Hand::validateCard($card1);
+        Hand::validateCard($card2);
+
         $this->cards = array($card1, $card2);
 
         return $this;
