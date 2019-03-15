@@ -86,7 +86,7 @@ class Summary extends Base
 
     public function setStreet($street)
     {
-        if (! in_array($streeet, $this->getTypesWithStreet()))
+        if (! in_array($street, $this->getTypesWithStreet()))
             return new LogicException("Street not allowed for summary type");
 
         $this->street = $street;
@@ -106,9 +106,6 @@ class Summary extends Base
 
     public function setChips($chips)
     {
-        if (! in_array($streeet, $this->getTypesWithChips()))
-            return new LogicException("Chips value not allowed for summary type");
-
         Chips::validate($chips);
 
         $this->chips = $chips;
