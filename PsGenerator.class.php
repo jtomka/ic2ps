@@ -2,350 +2,290 @@
 
 class PsGenerator extends Base implements GeneratorInterface
 {
-    protected $tr_game = array(
-        Hand::GAME_HOLDEM => "Hold'em",
-    );
+    const TIME_FORMAT = '%Y/%m/%d %H:%M:%S';
 
-    protected $tr_limit = array(
-        Hand::LIMIT_NOLIMIT => "No Limit",
-    );
+    private $hand;
 
-    public function __construct(Hand $hand)
+    private function setHand(Hand $hand)
     {
         $this->hand = $hand;
     }
 
-    public function getPsLimit()
+    private function getHand()
     {
-        return $this->tr_limit[$this->info['limit']];
+        return $this->hand;
     }
 
-    public function getPsGame()
+    private function getId()
     {
-        return $this->tr_game[$this->info['game']];
+        return $this->getHand()->getId();
     }
-
-    /**
-     * Get hand action across all streets
-     */
-    protected function getAllAction()
+    
+    private function getGame()
     {
-        if (! isset($this->all_action)) {
-            $this->all_action = array_merge($this->preflop['action'], empty($this->flop['action']) ? array() : $this->flop['action'], empty($this->turn['action']) ? array() : $this->turn['action'], empty($this->river['action']) ? array() : $this->river['action']);
-        }
-
-        return $this->all_action;
-    }
-
-    /**
-     * Get spcific player's Seat record
-     */
-    protected function getPlayerSeat($player)
-    {
-        if (! isset($this->player_to_seat)) {
-            foreach ($this->preflop['hole_cards'] as $seat) {
-                if (empty($seat))
-                    continue;
-                $this->player_to_seat[$seat['player']] = $seat;
-            }
-        }
-
-        return  $this->player_to_seat[$player];
-    }
-
-    /**
-     * Generate Poker Stars hand initial line
-     */
-    protected function getHandInitText()
-    {
-        $tr_blind = array(
-            'Small Blind' => 'small blind',
-            'Big blind' => 'big blind',
+        $tr_game = array(
+            Game::HOLDEM => "Hold'em",
         );
 
-        $time_format = '%Y/%m/%d %H:%M:%S';
-        $out = '';
-
-        $this->info['timestamp'] = mktime($this->info['hour'], $this->info['minute'], $this->info['second'],
-                            $this->info['month'], $this->info['day'], $this->info['year']);
-        $aest_time = strftime($time_format, $this->info['timestamp']);
-        $et_time = strftime($time_format, $this->info['timestamp'] - (15 * 60 * 60));
-
-        $out .= sprintf("PokerStars Hand #%d:  %s %s ($%.02f/$%.02f USD) - %s AEST [%s ET]\n", $this->getPsHandId(), $this->getPsGame(), $this->getPsLimit(), $this->getFileSb(), $this->getFileBb(), $aest_time, $et_time);
-        
-        return $out;
+        return $tr_game[$this->getHand()->getGame()];
     }
 
-    /**
-     * Get Dealer's seat number. If empty, use first free seat's number.
-     */
-    protected function getDealerSeatno()
+    private function getLimit()
     {
-        if (! isset($this->dealer['seatno'])) {
-            // Find first empty seat, that'll be the dealer.
-            $i = 1;
-            foreach ($this->seats as $seat) {
-                if (empty($seat))
-                    continue;
+        $tr_limit = array(
+            Limit::NOLIMIT => "No Limit",
+        );
 
-                if ($seat['seatno'] != $i) { // Found a gap
-                    $this->dealer['seatno'] = $i;
-                    break;
-                }
+        return $tr_limit[$this->getHand()->getLimit()];
+    }
 
-                $i++;
-            }
+    private function getGameSb()
+    {
+        return $this->getHand()->getGamePost(Post::SB);
+    }
 
-            if (! isset($this->dealer['seatno'])) // Use last
-                $this->dealer['seatno'] = $i;
+    private function getGameBb()
+    {
+        return $this->getHand()->getGamePost(Post::BB);
+    }
+
+    private function getAestTime()
+    {
+        return strftime($this->TIME_FORMAT, $this->getHand()->getTimestamp()) . " AEST";
+    }
+
+    private function getEtTime()
+    {
+        $time_diff = - (15 * 60 * 60);
+
+        return strftime($this->TIME_FORMAT, $this->getHand()->getTimestamp() + $time_diff) . " ET";
+    }
+
+    private function getHandInitText()
+    {
+        return sprintf("PokerStars Hand #%d:  %s %s ($%.02f/$%.02f USD) - %s [%s]\n",
+            $this->getId(), $this->getGame(), $this->getLimit(),
+            $this->getGameSb(), $this->getGameBb(),
+            $this->getAestTime(), $this->getEtTime());
+    }
+
+    private function getTableSize()
+    {
+        $tr_table_size = array(
+            TableSize::TWO => '2-max',
+            TableSize::SIX => '6-max',
+            TableSize::NINE => '9-max'
+        );
+
+        return $tr_table_size[$this->getHand()->getTableSize()];
+    }
+
+    private function getDealerSeat()
+    {
+        $dealer_seat = $this->getHand()->getDealerSeat();
+        if ($dealer_seat)
+            return $dealer_seat;
+
+        $i = 1;
+        foreach ($this->getHand()->getSeats() as $player) {
+            if ($player->getSeat() != $i) // Found a gap
+                return $i;
+
+            $i++;
         }
 
-        return $this->dealer['seatno'];
+        return $i; // One after last
     }
 
-    /**
-     * Generate Poker Stars hand table and dealer line
-     */
-    protected function getTableText()
+    private function getTableText()
     {
-        $str_table_size = '6-max'; // table size missing in ignition (or RING?)
-
-        $out = '';
-
-        $button_seat = '';
-        if ($dealer_seatno = $this->getDealerSeatno())
-            $button_seat = sprintf(" Seat #%d is the button", $dealer_seatno);
-        $out .= sprintf("Table '%s' %s%s\n", $this->getPsTableName(), $str_table_size, $button_seat);
-
-        return $out;
+        return sprintf("Table '%s' %s Seat #%d is the button\n",
+            $this->getTableId(), $this->getTableSize(), $this->getDealerSeat());
     }
 
-    /**
-     * Get seat record of the [ME] player
-     */
-    protected function getMePlayer()
+    private function formatChips($chips)
     {
-        if (! isset($this->me_player)) {
-            foreach ($this->preflop['hole_cards'] as $player) {
-                if (! empty($player['me'])) {
-                    $this->me_player = $player;
-                    break;
-                }
-            }
-        }
-        return $this->me_player;
+        $tr_format = array(
+            Format::CASH_GAME => '$%.02f',
+            Format::TOURNAMENT => '%d'
+        );
+
+        return sprintf($tr_format[$this->getHand()->getFormat()], $chips);
     }
 
-    /**
-     * Return player name with [ME] player's converted to Ignition<ID>
-     */
-    protected function me($player)
-    {
-        $me = $this->getMePlayer();
-        if ($player == $me['player'])
-            $player = $this->getPsAccountId();
-
-        return $player;
-    }
-
-    /**
-     * Generate Poker Stars seats lines and blind post lines
-     */
-    protected function getSeatsBlindsText()
+    private function getSeatsText()
     {
         $out = '';
 
-        foreach ($this->seats as $seat) {
-            if (empty($seat))
-                continue;
-            $out .= sprintf("Seat %d: %s ($%.02f in chips)\n", $seat['seatno'], $this->me($seat['player']), $seat['chips']);
+        foreach ($this->getHand()->getSeats() as $player) {
+            $out .= sprintf("Seat %d: %s (%s in chips)\n",
+                $player->getSeat(), $player->getName(), $this->formatChips($player->getChips()));
         }
-
-        if (! empty($this->posts['sb']))
-            $out .= sprintf("%s: posts small blind $%.02f\n", $this->me($this->posts['sb']['player']), $this->posts['sb']['chips']);
-
-        $out .= sprintf("%s: posts big blind $%.02f\n", $this->me($this->posts['bb']['player']), $this->posts['bb']['chips']);
 
         return $out;
     }
 
-    /**
-     * Generate Poker Stars hand hole cards (and preflop action) section
-     * XXX: Try to include hole cards for all players
-     */
+    private function getPostsText()
+    {
+        $out = '';
+
+        $tr_post = array(
+            Post::SB => 'small blind',
+            Post::BB => 'big blind',
+        );
+
+        foreach ($this->getHand()->getPosts() as $post) {
+            $out .= sprintf("%s: posts %s %s\n", $post->getName(), $tr_post[$post->getType()],
+                $this->formatChips($post->getChips()));
+        }
+
+        return $out;
+    }
+
+    private function formatCards($cards)
+    {
+        return '[' . implode(' ', $cards) . ']';
+    }
+
     protected function getHoleCardsText()
     {
         $out = '';
 
-        $out .= sprintf("*** HOLE CARDS ***\n");
+        $out .= "*** HOLE CARDS ***\n";
 
-        $player = $this->getMePlayer();
-        $out .= sprintf("Dealt to %s [%s %s]\n", $this->me($player['player']), $player['card1'], $player['card2']);
+        $player = $this->getHeroPlayer();
+        $out .= sprintf("Dealt to %s [%s]\n", $player->getName(),
+            $this->formatCards($player->getCards()));
 
-        $out .= $this->getActionsText(self::STREET_PREFLOP);
+        $out .= $this->getActionsText(Street::PREFLOP);
 
         return $out;
     }
 
-    /**
-     * Generate Poker Stars hand street action lines
-     */
     protected function getActionsText($street)
     {
         $out = '';
 
-        $tr_action = array(
-            'Folds' => 'folds',
-            'Checks' => 'checks',
-            'Calls' => 'calls',
-            'Bets' => 'bets',
-            'Raises' => 'raises',
-            'All-in(bet)' => 'bets',
-            'All-in(call)' => 'calls',
-            'All-in(raise)' => 'raises',
-            'Return uncalled portion of bet' => '',
+        $tr_type = array(
+            Action::FOLD => 'folds',
+            Action::CHECK => 'checks',
+            Action::CALL => 'calls',
+            Action::BET => 'bets',
+            Action::RAISE => 'raises',
         );
 
-        $last_bet_size = 0;
-        if ($street == self::STREET_PREFLOP)
-            $last_bet_size = $this->posts['bb']['chips'];
+        foreach ($this->getHand()->getAction($street) as $action) {
+            if ($action->getType() == Action:RETRN) {
+                $out .= sprintf("Uncalled bet (%s) returned to %s\n",
+                    $this->formatChips($action->getChips()), $action->getName());
 
-        foreach ($this->{$street}['action'] as $action) {
-            if (empty($action['action']))
-                continue;
+            } elseif (in_array($action->getType(), Action::getTypesWithoutChips())) {
+                $out .= sprintf("%s: %s\n", $action->getName(), $tr_type[$action->getType()]);
 
-            if (in_array($action['action'], array('Folds', 'Checks'))) {
-                $out .= sprintf("%s: %s\n", $this->me($action['player']), $tr_action[$action['action']]);
+            } elseif (in_array($action->getType(), Action::getTypesWithChips())) {
+                $out .= sprintf("%s: %s %s", $action->getName(), $tr_action[$action->getType()],
+                    $this->formatChips($action->getChips()));
 
-            } elseif (in_array($action['action'], array('Bets', 'Calls'))) {
-                $out .= sprintf("%s: %s $%.2f\n", $this->me($action['player']), $tr_action[$action['action']], $action['chips']);
-                if ($action['action'] == 'Bets')
-                    $last_bet_size = $action['chips'];
+                if (in_array($action->getType(), Action::getTypesWithToChips()))
+                    $out .= sprintf(" to %s", $this->formatChips($action->getToChips()));
 
-            } elseif (in_array($action['action'], array('Raises', 'All-in(raise)'))) {
-                $out .= sprintf("%s: %s $%.2f to $%.2f%s\n", $this->me($action['player']), $tr_action[$action['action']], $action['chips'], $action['to_chips'], ($action['action'] == 'Raises' ? '' : ' and is all-in'));
-
-                $last_bet_size = $action['to_chips'];
-
-            } elseif (in_array($action['action'], array('All-in'))) {
-                if ($last_bet_size == 0)
-                    $allin_action = 'bets';
-                elseif ($action['chips'] <= $last_bet_size)
-                    $allin_action = 'calls';
-                else
-                    $allin_action = 'raises';
-
-                $out .= sprintf("%s: %s $%.2f and is all-in\n", $this->me($action['player']), $allin_action, $action['chips']);
-                $last_bet_size = $action['chips'];
-
-            } elseif ($action['action'] == 'Return') {
-                $out .= sprintf("Uncalled bet ($%.02f) returned to %s\n", $action['chips'], $this->me($action['player']));
-            } else {
-                // Ignore everything else
-            }
-        }
-
-        return $out;
-    }
-
-    protected function getFlopText()
-    {
-        $out = '';
-
-        if (! empty($this->flop['cards'])) {
-            $out .= sprintf("*** FLOP *** [%s %s %s]\n", $this->flop['cards'][1], $this->flop['cards'][2], $this->flop['cards'][3]);
-
-            if (! empty($this->flop['action']))
-                $out .= $this->getActionsText(self::STREET_FLOP);
-        }
-
-        return $out;
-    }
-
-    protected function getTurnText()
-    {
-        $out = '';
-
-        if (! empty($this->turn['cards'])) {
-            $out .= sprintf("*** TURN *** [%s %s %s] [%s]\n", $this->flop['cards'][1], $this->flop['cards'][2], $this->flop['cards'][3], $this->turn['cards'][1]);
-
-            if (! empty($this->turn['action']))
-                $out .= $this->getActionsText(self::STREET_TURN);
-        }
-
-        return $out;
-    }
-
-    protected function getRiverText()
-    {
-        $out = '';
-
-        if (! empty($this->river['cards'])) {
-            $out .= sprintf("*** RIVER *** [%s %s %s %s] [%s]\n", $this->flop['cards'][1], $this->flop['cards'][2], $this->flop['cards'][3], $this->turn['cards'][1], $this->river['cards'][1]);
-
-            if (! empty($this->river['action']))
-                $out .= $this->getActionsText(self::STREET_RIVER);
-        }
-
-        return $out;
-    }
-
-    /**
-     * Generate Poker Stars hand showdown section
-     */
-    protected function getShowdownText()
-    {
-        $out = '';
-        $has_showdown = false;
-        $showdown = array();
-
-        foreach ($this->getAllAction() as $action) {
-            if (empty($action))
-                continue;
-
-            if (in_array($action['action'], array('Showdown', 'Mucks', 'Hand result'))) {
-                if (! $has_showdown && $action['action'] == 'Showdown')
-                    $has_showdown = true;
-                $showdown[] = $action;
-            }
-        }
-
-        if ($has_showdown) {
-
-            $out .= "*** SHOW DOWN ***\n";
-
-            foreach ($showdown as $action) {
-                if ($action['action'] == 'Showdown') {
-                    foreach ($this->preflop['hole_cards'] as $seat) {
-                        if ($seat['player'] == $action['player'])
-                            break;
-                    }
-
-                    $out .= sprintf("%s: shows [%s %s] (%s)\n", $this->me($action['player']), $seat['card1'], $seat['card2'], $action['ranking']);
-
-                } elseif ($action['action'] == 'Mucks') {
-                    $out .= sprintf("%s: mucks hand\n", $this->me($action['player']));
-
-                } elseif ($action['action'] == 'Hand result') {
-                    $out .= sprintf("%s collected $%.02f from pot\n", $this->me($action['player']), $action['chips']);
+                if (in_array($action->getType(), Action::getTypesWithAllIn()))
+                        && $action->getIsAllIn()) {
+                    $out .= sprintf(" and is all-in", $this->formatChips($action->getToChips()));
                 }
+
+                $out .= "\n";
             }
         }
 
         return $out;
     }
 
-    /**
-     * Generate Poker Stars hand summary seat lines
-     */
-    protected function getSummarySeatsText()
+    private function getFlopText()
+    {
+        $out = '';
+        $flop_cards = $this->getHand()->getCommunityCards(Street::FLOP);
+
+        if (empty($flop_cards))
+            return $out;
+
+        $out .= sprintf("*** FLOP *** %s\n", $this->formatCards($flop_cards));
+
+        $out .= $this->getActionsText(Street::FLOP);
+
+        return $out;
+    }
+
+    private function getTurnText()
+    {
+        $out = '';
+        $flop_cards = $this->getHand()->getCommunityCards(Street::FLOP);
+        $turn_cards = $this->getHand()->getCommunityCards(Street::TURN);
+
+        if (empty($turn_cards))
+            return $out;
+
+        $out .= sprintf("*** TURN *** %s %s\n", $this->formatCards($flop_cards),
+            $this->formatCards($turn_cards));
+
+        $out .= $this->getActionsText(Street::TURN);
+
+        return $out;
+    }
+
+    private function getRiverText()
+    {
+        $out = '';
+        $flop_turn_cards = array_merge($this->getHand()->getCommunityCards(Street::FLOP),
+            $this->getHand()->getCommunityCards(Street::TURN));
+        $river_cards = $this->getHand()->getCommunityCards(Street::RIVER);
+
+        if (empty($river_cards))
+            return $out;
+
+        $out .= sprintf("*** RIVER *** %s %s\n", $this->formatCards($flop_turn_cards),
+            $this->formatCards($river_cards));
+
+        $out .= $this->getActionsText(Street::RIVER);
+
+        return $out;
+    }
+
+    private function getShowdownText()
     {
         $out = '';
 
-        foreach ($this->summary['seats'] as $action) {
-            if (empty($action))
-                continue;
+        $showdown_action = $this->getHand()->getShowdownAction();
 
+        if (empty($showdown_action))
+            return $out;
+
+        $out .= "*** SHOW DOWN ***\n";
+
+        foreach ($showdown_action as $action) {
+            if ($action->getType() == Action::SHOWDOWN) {
+                $cards = $this->getHand()->getPlayer($action->getName())->getCards();
+
+                $out .= sprintf("%s: shows %s (%s)\n", $action->getName(),
+                    $this->formatCards($cards), $action->getRanking());
+
+            } elseif ($action->getType() == Action::MUCK) {
+                $out .= sprintf("%s: mucks hand\n", $action->getName());
+
+            } elseif ($action->getType() == Action::RESULT) {
+                $out .= sprintf("%s collected %s from pot\n", $action->getName(),
+                    $this->formatChips($action->getChips()));
+            }
+        }
+
+        return $out;
+    }
+
+    private function getSummarySeatsText()
+    {
+        $out = '';
+
+        foreach ($this->getHand()->getSummary() as $seat) {
             $str_position = '';
             if (isset($tr_summary_position[$action['player']]))
                 $str_position = ' (' . $tr_summary_position[$action['player']] . ')';
@@ -407,18 +347,12 @@ class PsGenerator extends Base implements GeneratorInterface
         return $out;
     }
 
-    public function getPsFormat()
-    {
-        return $this->ps_format;
-    }
-
     /**
      * Use collected Ignition Casino hand data to generate Poker Stars hand text
      */
-    public function convertToPsFormat()
+    public function getText(Hand $hand)
     {
-        if (isset($this->ps_format))
-            return $this;
+        $this->setHand($hand);
 
         $out = '';
 
@@ -432,7 +366,9 @@ class PsGenerator extends Base implements GeneratorInterface
 
         $out .= $this->getTableText();
 
-        $out .= $this->getSeatsBlindsText();
+        $out .= $this->getSeatsText();
+
+        $out .= $this->getPostsText();
 
         $out .= $this->getHoleCardsText();
 
@@ -448,9 +384,7 @@ class PsGenerator extends Base implements GeneratorInterface
 
         $out .= "\n";
 
-        $this->ps_format = $out;
-
-        return $this;
+        return $out;
     }
 }
 
