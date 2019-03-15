@@ -2,37 +2,31 @@
 
 class Player extends Base
 {
-    protected $name;
+    private $name;
 
-    protected $seat;
+    private $seat;
 
-    protected $cards;
+    private $cards;
 
-    protected $is_hero;
+    private $is_hero;
 
-    public function __construct()
+    public function __construct($seat, $name, $chips, $is_hero = false)
     {
-        $this->cards = array();
+        $this->setSeat($seat);
+        $this->setName($name);
+        $this->setChips($chips);
+        $this->setIsHero($is_hero);
     }
 
-    public function setName($name)
-    {
-        Hand::validatePlayerName($name);
-
-        $this->name = $name;
-
-        return $this;
-    }
-
-    public function getName()
-    {
-        return $this->name;
-    }
-
-    public function setSeat($seat)
+    public static function validateSeat($seat)
     {
         if (! is_int($seat) || $seat < 1)
-            throw new InvalidArgumentException(sprintf("Invalid seat number `%i'", $seat));
+            throw new InvalidArgumentException(sprintf("Invalid seat number `%s'", $seat));
+    }
+
+    private function setSeat($seat)
+    {
+        $this->validateSeat($seat);
 
         $this->seat = $seat;
 
@@ -44,8 +38,43 @@ class Player extends Base
         return $this->seat;
     }
 
+    public static function validateName($name)
+    {
+        if (empty($name))
+            throw new InvalidArgumentException("Empty player name");
+    }
+
+    private function setName($name)
+    {
+        $this->validateName($name);
+
+        $this->name = $name;
+
+        return $this;
+    }
+
+    public function getName()
+    {
+        return $this->name;
+    }
+
+    private function setChips($chips)
+    {
+        Chips::validate($chips);
+
+        $this->chips = $chips;
+
+        return $this;
+    }
+
     public function setCards($cards)
     {
+        if (isset($this->cards))
+            throw new LogicException("Change of player cards not allowed");
+
+        if (is_string($cards))
+            $cards = explode(' ', $cards);
+
         foreach ($cards as $c)
             Hand::validateCard($c);
 
@@ -64,7 +93,7 @@ class Player extends Base
         return (bool) $this->is_hero;
     }
 
-    public function setIsHero($is_hero = true)
+    private function setIsHero($is_hero = true)
     {
         $this->is_hero = (bool) $is_hero;
 

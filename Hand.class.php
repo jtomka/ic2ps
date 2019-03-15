@@ -2,28 +2,11 @@
 
 class Hand extends Base
 {
-    const STREET_PREFLOP = 'preflop';
-    const STREET_FLOP = 'flop';
-    const STREET_TURN = 'turn';
-    const STREET_RIVER = 'river';
-
-    const GAME_HOLDEM = 'holdem';
-
-    const LIMIT_NOLIMIT = 'nolimit';
-
-    const TABLE_SIZE_2 = 2;
-    const TABLE_SIZE_6 = 6;
-    const TABLE_SIZE_9 = 9;
-
-    const SMALL_BLIND = 'sb';
-    const BIG_BLIND = 'bb';
-
-    const POST_SB = self::SMALL_BLIND;
-    const POST_BB = self::BIG_BLIND;
-    const POST_OTHER = 'other';
-    const POST_RETURN = 'return';
-
     private $id;
+
+    private $format;
+
+    private $tournament;
 
     private $table_id;
 
@@ -35,7 +18,9 @@ class Hand extends Base
 
     private $table_size;
 
-    private $game_blinds;
+    private $currency;
+
+    private $game_posts;
 
     private $dealer_seat;
 
@@ -45,7 +30,7 @@ class Hand extends Base
 
     private $community_cards;
 
-    private $all_action;
+    private $action;
 
     private $pots;
 
@@ -55,26 +40,19 @@ class Hand extends Base
 
     public function __construct()
     {
-	$this->game_blinds = array();
-
-	$this->posts = array(
-	    'sb' => array(),
-	    'bb' => array(),
-	    'other' => array(),
-	    'return' => array()
-	);
+        foreach (Post::getAllTypes() as $type)
+            if (! Post::isSingle($type))
+                $this->posts[$type] = array();
 
 	$this->players = array();
 
-	$this->community_cards = array(
-	    self::STREET_FLOP => array(),
-	    self::STREET_TURN => array(),
-	    self::STREET_RIVER => array()
-	);
+	$this->community_cards = array();
+        foreach (Street::getAllPostflop() as $street)
+            $this->community_cards[$street] = array();
 
 	$this->action = array();
 
-	$this->pots = array();
+	$this->pots = array(0 => null);
 
 	$this->summary_seats = array();
     }
@@ -83,8 +61,6 @@ class Hand extends Base
     {
         if (! (is_numeric($id) || is_string($id)) || ! strlen($id))
             throw new InvalidArgumentException(sprintf("Invalid hand ID value", $id));
-
-        return true;
     }
 
     public function setId($id)
@@ -105,8 +81,6 @@ class Hand extends Base
     {
         if (! is_string($table_id) || ! strlen($table_id))
             throw new InvalidArgumentException(sprintf("Invalid table ID value `%s'", $table_id));
-
-        return true;
     }
 
     public function setTableId($table_id)
@@ -127,8 +101,6 @@ class Hand extends Base
     {
         if (! is_int($timestamp) || $timestamp < 0)
             throw new InvalidArgumentException(sprintf("Incorrect timestamp `%s'", $timestamp));
-
-        return true;
     }
 
     public function setTimestamp($timestamp)
@@ -145,17 +117,9 @@ class Hand extends Base
     	return $this->timestamp;
     }
 
-    public static function validateGame($game)
-    {
-        if (! in_array($game, array(self::GAME_HOLDEM)))
-            throw new InvalidArgumentException(sprintf("Unsupported game `%s'", $game));
-
-        return true;
-    }
-
     public function setGame($game)
     {
-        $this->validateGame($game);
+        Game::validate($game);
 
 	$this->game = $game;
 
@@ -167,17 +131,9 @@ class Hand extends Base
 	return $this->game;
     }
 
-    public static function validateLimit($limit)
-    {
-        if (! in_array($limit, array(self::LIMIT_NOLIMIT)))
-            throw new InvalidArgumentException(sprintf("Unsupported limit type `%s'", $limit));
-
-        return true;
-    }
-
     public function setLimit($limit)
     {
-        $this->validateLimit($limit);
+        Limit::validate($limit);
 
     	$this->limit = $limit;
 
@@ -189,69 +145,9 @@ class Hand extends Base
 	return $this->limit;
     }
 
-    public function getGameBlinds()
-    {
-	return $this->game_blinds;
-    }
-
-    public function getGameBlind($blind)
-    {
-        $this->validateBlindType($blind);
-
-        $game_blinds = $this->getGameBlinds();
-
-        return $game_blinds[$blind];
-    }
-
-    public static function validateBlindType($blind_type)
-    {
-        if (! in_array($blind_type, array(self::SMALL_BLIND, self::BIG_BLIND)))
-            throw new InvalidArgumentException(sprintf("Invalid blind type `%s'", $blind_type));
-
-        return true;
-    }
-
-    public function setGameBlind($blind_type, $chips)
-    {
-        $this->validateBlindType($blind_type);
-        $this->validateChipsAmount($chips);
-
-    	$this->game_blinds[$blind] = $chips;
-
-        return $this;
-    }
-
-    public function setGameSb($chips)
-    {
-    	return $this->setGameBlind(self::SMALL_BLIND, $chips);
-    }
-
-    public function getGameSb()
-    {
-        return $this->getGameBlind(self::SMALL_BLIND);
-    }
-
-    public function setGameBb($chips)
-    {
-    	return $this->setGameBlind(self::BIG_BLIND, $chips);
-    }
-
-    public function getGameBb()
-    {
-        return $this->getGameBlind(self::BIG_BLIND);
-    }
-
-    public static function validateTableSize($table_size)
-    {
-        if (! in_array($table_size, array(self::TABLE_SIZE_2, self::TABLE_SIZE_6, self::TABLE_SIZE_9)))
-            throw new InvalidArgumentException(sprintf("Unsupported table size `%s'", $table_size));
-
-        return true;
-    }
-
     public function setTableSize($table_size)
     {
-        $this->validateTableSize($table_size);
+        TableSize::validate($table_size);
 
 	$this->table_size = $table_size;
 
@@ -263,12 +159,20 @@ class Hand extends Base
 	return $this->table_size;
     }
 
-    public function createPlayer()
+    public function setCurrency($currency)
     {
-	$player = new Player();
-	$this->players[] = $player;
+        Currency::validate($currency);
 
-	return $player;
+        $this->currency = $currency;
+
+        return $this;
+    }
+
+    public function addPlayer($seat, $name, $chips, $is_hero = false)
+    {
+	$this->players[$name] = new Player($seat, $name, $chips, $is_hero);
+
+	return $this;
     }
 
     public function getPlayers()
@@ -278,10 +182,20 @@ class Hand extends Base
 
     public function getPlayer($name)
     {
-        if (! isset($this->players[$name]))
-            return false;
+        Player::validateName($name);
 
-    	return $this->players[$name];
+        foreach ($this->getPlayers() as $player)
+            if ($player->getName() == $name)
+                return $player;
+
+        return false;
+    }
+
+    public function setPlayerCards($name, $cards)
+    {
+        $this->getPlayer($name)->setCards($cards);
+
+	return $this;
     }
 
     public function getDealerPlayer()
@@ -316,6 +230,8 @@ class Hand extends Base
 
     public function getSeat($i)
     {
+        Player::validateSeat($i);
+
     	$seats = $this->getSeats();
 	if (! isset($seats[$i]))
 	    return false;
@@ -325,8 +241,7 @@ class Hand extends Base
 
     public function setDealerSeat($dealer_seat)
     {
-        if (! is_int($dealer_seat) || $dealer_seat < 1)
-            throw new InvalidArgumentException(sprintf("Invalid dealer seat number `%i'", $dealer_seat));
+        Player::validateSeat($dealer_seat);
 
     	$this->dealer_seat = $dealer_seat;
 
@@ -338,45 +253,37 @@ class Hand extends Base
 	return $this->dealer_seat;
     }
 
-    public static function validatePostType($post_type)
+    public function setGamePost($type, $chips)
     {
-        if (! in_array($post_type, array(self::POST_SB, self::POST_BB, self::POST_OTHER, self::POST_RETURN)))
-            throw new InvalidArgumentException(sprintf("Invalid post type `%s'", $post_type));
+        $game_post = new GamePost($type, $chips);
 
-        return true;
+        $this->game_posts[$type] = $game_post;
+
+	return $this;
     }
 
-    public static function validatePlayerName($name)
+    public function getGamePosts()
     {
-        if (empty($name))
-            throw new InvalidArgumentException("Empty player name");
-
-        return true;
+    	return $this->game_posts;
     }
 
-    public static function validateChipsAmount($chips)
+    public function getGamePost($type)
     {
-        if (! is_numeric($chips) || $chips < 0)
-            throw new InvalidArgumentException(sprintf("Invalid chips amount, `%f'", $chips));
+        GamePost::validate($type);
 
-        return true;
+        $posts = $this->getGamePosts();
+
+    	return $posts[$type];
     }
 
-    public function addPost($type, $player, $chips)
+    public function addPost($type, $chips, $player)
     {
-        $this->validatePostType($type);
-        $this->validatePlayerName($player);
-        $this->validateChipsAmount($chips);
+	$post = new Post($type, $chips, $player);
 
-	$post = array(
-	    'player' => $player,
-	    'chips' => $chips
-	);
-
-	if ($type == self::POST_OTHER)
-	    $this->posts[$type][] = $post;
-	else
+	if (Post::isSingle($type))
 	    $this->posts[$type] = $post;
+	else
+	    $this->posts[$type][] = $post;
 
 	return $this;
     }
@@ -388,32 +295,11 @@ class Hand extends Base
 
     public function getPost($type)
     {
-        if (! in_array($type, $this->getPostTypes()))
-            throw new InvalidArgumentException(sprintf("Invalid post type `%s'", $type));
+        Post::validate($type);
 
         $posts = $this->getPosts();
 
     	return $posts[$type];
-    }
-
-    public function getPostSb()
-    {
-    	return $this->getPost(self::POST_SB);
-    }
-
-    public function getPostBb()
-    {
-    	return $this->getPost(self::POST_BB);
-    }
-
-    public function getPostOther()
-    {
-    	return $this->getPost(self::POST_OTHER);
-    }
-
-    public function getPostReturn()
-    {
-    	return $this->getPost(self::POST_RETURN);
     }
 
     public static function validateCard($card)
@@ -425,25 +311,13 @@ class Hand extends Base
             throw new InvalidArgumentException(sprintf("Invalid card string `%s'", $card));
     }
 
-    public static function validateStreetPostflop($street)
-    {
-        if (! in_array($street, array(self::STREET_FLOP, self::STREET_TURN, self::STREET_RIVER)))
-            throw new InvalidArgumentException(sprintf("Invalid street `%s'", $street));
-    }
-
-    public static function validateStreetCardCount($street, $card_count)
-    {
-        if (($street == self::STREET_FLOP && $card_count != 3)
-         || ($street == self::STREET_TURN && $card_count != 1)
-         || ($street == self::STREET_RIVER && $card_count != 1)) {
-            throw new InvalidArgumentException(sprintf("Invalid nuber of community cards (%d) for street `%s'", $card_count, $street));
-        }
-    }
-
     public function setCommunityCards($street, $cards)
     {
-        $this->validateStreetPostflop($street);
-        $this->validateStreetCardCount($street, count($cards));
+        if (is_string($cards))
+            $cards = explode(' ', $cards);
+
+        Street::validatePostflop($street);
+        Street::validateCardCount($street, count($cards));
 
         foreach ($cards as $c)
             $this->validateCard($c);
@@ -453,164 +327,100 @@ class Hand extends Base
 	return $this;
     }
 
-    public function setFlopCommunityCards($cards)
+    public function getCommunityCards($street = null)
     {
-    	return $this->setCommunityCards(self::STREET_FLOP, $cards);
+        if (! is_null($street)) {
+            Street::validatePostflop($street);
+
+            return $this->community_cards[$street];
+        }
+
+        $result = array();
+
+        foreach ($this->community_cards as $street)
+            $result = array_merge($result, $street);
+
+        return $result;
     }
 
-    public function setTurnCommunityCards($cards)
-    {
-    	return $this->setCommunityCards(self::STREET_TURN, $cards);
-    }
-
-    public function setRiverCommunityCards($cards)
-    {
-    	return $this->setCommunityCards(self::STREET_RIVER, $cards);
-    }
-
-    public function getAllCommunityCards()
-    {
-	return array_merge($this->community_cards[self::STREET_FLOP],
-	    $this->community_cards[self::STREET_TURN], $this->community_cards[self::STREET_RIVER]);
-    }
-
-    public function getCommunityCards($street)
-    {
-	if ($street == self::STREET_PREFLOP)
-	    return array();
-
-	if (! isset($this->community_cards[$street]))
-	    return array();
-
-	return $this->community_cards[$street];
-    }
-
-    public function createAction()
+    public function addAction($street, $name, $type, ...$extra)
     { 
-    	$action = new Action();
-	$this->all_action[] = $action;
+	$this->action[] = new Action($street, $name, $type);
 
-	return $action;
+	return $this;
     }
 
-    public function getPreflopAction()
+    public function getAction($street = null)
     {
-    	return getStreetAction(self::STREET_PREFLOP);
-    }
+        if (is_null($street))
+            return $this->action;
 
-    public function getFlopAction()
-    {
-    	return getStreetAction(self::STREET_FLOP);
-    }
+        Street::validate($street);
 
-    public function getTurnAction()
-    {
-    	return getStreetAction(self::STREET_TURN);
-    }
+    	$result = array();
 
-    public function getRiverAction()
-    {
-    	return getStreetAction(self::STREET_RIVER);
-    }
-
-    public function getAllAction()
-    {
-    	return $this->all_action;
-    }
-
-    public function getStreetAction($street)
-    {
-    	$street_action = array();
-
-	foreach ($this->getAllAction() as $action)
+	foreach ($this->action as $action) {
 	    if ($action->getStreet() == $street)
-	    	$street_action[] = $action;
+	    	$result[] = $action;
+        }
 
-    	return $street_action;
-    }
-
-    private function getShowdownActionActions()
-    {
-        return array(Action::SHOWDOWN, Action::MUCK, Action::RESULT);
+    	return $result;
     }
 
     public function getShowdownAction()
     {
     	$has_showdown = false;
-	$showdown_action = array();
+	$result = array();
 
-	foreach ($this->getAllAction() as $action) {
-	    if (in_array($action->getAction(), $this->getShowdownActionActions())) {
-		if ($action->getAction() == Action::SHOWDOWN)
+	foreach ($this->getAction() as $action) {
+	    if (in_array($action->getType(), Action::getShowdownTypes())) {
+		if ($action->getType() == Action::SHOWDOWN)
 		    $has_showdown = true;
-		$showdown_action[] = $action;
+		$result[] = $action;
 	    }
 	}
 
 	if (! $has_showdown)
-	    return false;
+	    return array();
 
-	return $showdown_action;
+	return $result;
     }
 
-    public static function validatePotNumber($i)
+    public function addMainPot($chips)
     {
-        if (! is_int($i) || $i < 0)
-            throw new InvalidArgumentException(sprintf("Invalid pot number `%i'", $i));
+        if (isset($this->pots[0]))
+            throw new LogicException("Multiple main pots not allowed");
 
-        return true;
+        Chips::validate($chips);
+
+        $this->pots[0] = new Pot(0, $chips);
     }
 
-    public function setPot($i, $chips)
+    public function addSidePot($chips)
     {
-        $this->validatePotNumber($i);
-        $this->validateChipsAmount($chips);
+        $number = count($this->pots);
 
-    	$this->pots[$i] = $chips;
-
-	return $this;
+        $this->pots[$number] = new Pot($number, $chips);
     }
 
-    public function setMainPot($chips)
+    public function getPots()
     {
-    	return $this->setPot(0, $chips);
-    }
-
-    public function setSidePot($i, $chips)
-    {
-    	return $this->setPot($i, $chips);
-    }
-
-    public function getAllPots()
-    {
-    	return $this->pots;
-    }
-
-    public function getPot($i)
-    {
-        $pots = $this->getAllPots();
-
-    	return $pots[$i];
+        return $this->pots;
     }
 
     public function getMainPot()
     {
-	return $this->getPot(0);
+        return $this->pots[0];
     }
 
-    public function getSidePot($i)
+    public function getSidePots()
     {
-    	return $this->getPot($i);
-    }
-
-    public function getAllSidePots()
-    {
-    	return array_slice($this->getPots(), 1);
+    	return array_slice($this->getPots, 1);
     }
 
     public function setRake($rake)
     {
-        $this->validateChipsAmount($rake);
+        Chips::validate($rake);
 
     	$this->rake = $rake;
 
@@ -624,10 +434,10 @@ class Hand extends Base
 
     public function getBoard()
     {
-    	return $this->getAllCommunityCards();
+    	return $this->getCommunityCards();
     }
 
-    public function createSummary()
+    public function addSummary()
     {
     	$summary = new Summary();
 	$this->summary_seats[] = $summary;

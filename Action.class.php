@@ -11,13 +11,14 @@ class Action
     const RETRN = 'return';
     const MUCK = 'muck';
     const RESULT = 'result';
+    const NOSHOW = 'noshow';
     const SHOWDOWN = 'showdown';
     
     private $street;
 
-    private $player;
+    private $name;
 
-    private $action;
+    private $type;
 
     private $chips;
 
@@ -25,11 +26,24 @@ class Action
 
     private $is_all_in;
 
-    public function setStreet(string $street)
+    public function __construct($street, $name, $type, $chips = null, $to_chips = null, $is_all_in = false)
     {
-        if (! in_array($street, array(Hand::STREET_PREFLOP, Hand::STREET_FLOP,
-                Hand::STREET_TURN, HAND::STREET_RIVER)))
-            throw new InvalidArgumentException(sprintf('Invalid street value `%s\'', $street));
+        $this->setStreet($street);
+        $this->setName($name);
+        $this->setType($type);
+
+        if (! is_null($chips))
+            $this->setChips($chips);
+
+        if (! is_null($to_chips))
+            $this->setToChips($to_chips);
+
+        $this->setIsAllIn($is_all_in);
+    }
+
+    private function setStreet($street)
+    {
+        Street::validate($street);
 
         $this->street = $street;
 
@@ -41,37 +55,51 @@ class Action
         return $this->street;
     }
 
-    public function setPlayer(string $player)
+    private function setName($name)
     {
-        if (empty($player))
-            throw new InvalidArgumentException("Empty player name");
+        Player::validateName($name);
 
-        $this->player = $player;
+        $this->name = $name;
 
         return $this;
     }
 
-    public function getPlayer()
+    public function getName()
     {
-        return $this->player;
+        return $this->name;
     }
 
-    public function setAction(string $action)
+    public static function getShowdownTypes()
     {
-	if (! in_array($action, array(self::FOLD, self::CHECK, self::CALL, self::BET, self::RAISE, self::RETRN, self::MUCK, self::RESULT, self::SHOWDOWN)))
-	    throw new InvalidArgumentException(sprintf("Invalid action value `%s'", $action));
+        return array(Action::SHOWDOWN, Action::MUCK, Action::RESULT);
+    }
 
-        $this->action = $action;
+    public static function getAllTypes()
+    {
+        return array_merge(array(self::FOLD, self::CHECK, self::CALL, self::BET, self::RAISE, self::RETRN), self::getShowdownTypes());
+    }
+
+    public static function validateType($type)
+    {
+	if (! in_array($type, self::getAllTypes()))
+            throw new InvalidArgumentException(sprintf("Invalid action type `%s'", $type));
+    }
+
+    private function setType($type)
+    {
+        self::validateType($type);
+
+        $this->type = $type;
 
         return $this;
     }
 
-    public function getAction()
+    public function getType()
     {
-        return $this->action;
+        return $this->type;
     }
 
-    public function setChips(float $chips)
+    private function setChips(float $chips)
     {
         Hand::validateChipsAmount($chips);
 
@@ -85,7 +113,7 @@ class Action
         return $this->chips;
     }
 
-    public function setToChips(float $to_chips)
+    private function setToChips(float $to_chips)
     {
         Hand::validateChipsAmount($to_chips);
 
@@ -99,9 +127,9 @@ class Action
         return $this->to_chips;
     }
 
-    public function setIsAllIn(bool $is_all_in)
+    private function setIsAllIn($is_all_in)
     {
-        $this->is_all_in = $is_all_in;
+        $this->is_all_in = (boolean) $is_all_in;
 
         return $this;
     }
