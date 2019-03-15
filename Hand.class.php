@@ -36,7 +36,7 @@ class Hand extends Base
 
     private $rake;
 
-    private $summary_seats;
+    private $summary;
 
     public function __construct()
     {
@@ -54,7 +54,7 @@ class Hand extends Base
 
 	$this->pots = array(0 => null);
 
-	$this->summary_seats = array();
+	$this->summary = array();
     }
 
     public static function validateId($id)
@@ -196,6 +196,29 @@ class Hand extends Base
         $this->getPlayer($name)->setCards($cards);
 
 	return $this;
+    }
+
+    public function assignPositions()
+    {
+        $dealer_seat = $this->getDealerSeat();
+
+        $i = null;
+        $seats = $this->getSeats();
+        foreach (array_merge($seats, $seats) as $player) {
+            if (is_null($i)) {
+                if ($player->getSeat() == $this->getDealerSeat())
+                    $i = 0;
+                else
+                    continue;
+            } else {
+                if ($player->getSeat() == $this->getDealerSeat())
+                    break;
+                else
+                    $i++;
+            }
+
+            $player->setPosition(Position::calculate($this->getTableSize(), $i));
+        }
     }
 
     public function getDealerPlayer()
@@ -343,11 +366,12 @@ class Hand extends Base
         return $result;
     }
 
-    public function addAction($street, $name, $type, ...$extra)
+    public function addAction($street, $name, $type)
     { 
-	$this->action[] = new Action($street, $name, $type);
+        $action = new Action($street, $name, $type);
+	$this->action[] = $action;
 
-	return $this;
+	return $action;
     }
 
     public function getAction($street = null)
@@ -437,24 +461,17 @@ class Hand extends Base
     	return $this->getCommunityCards();
     }
 
-    public function addSummary()
+    public function addSummary($seat, $name, $type)
     {
-    	$summary = new Summary();
-	$this->summary_seats[] = $summary;
+    	$summary = new Summary($seat, $name, $type);
+	$this->summary[$seat] = $summary;
 
 	return $summary;
     }
 
-    public function getSummarySeats()
+    public function getSummary()
     {
-	$result = array();
-
-	foreach ($this->summary_seats as $seat)
-	    $result[$seat->getSeat()] = $seat;
-
-	ksort($result, SORT_NUMERIC);
-
-	return $result;
+	return $this->summary;
     }
 }
 

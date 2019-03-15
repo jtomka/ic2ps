@@ -5,23 +5,31 @@ class Summary extends Base
     const FOLD = 'fold';
     const MUCK = 'muck';
     const WIN = 'win';
+    const LOSS = 'loss';
     
     protected $seat;
 
-    protected $player;
+    protected $name;
 
-    protected $action;
+    protected $type;
 
     protected $street;
 
-    protected $cards;
-
     protected $chips;
 
-    protected $shows;
+    protected $cards;
 
-    public function setSeat($seat)
+    public function __construct($seat, $name, $type)
     {
+        $this->setSeat($seat);
+        $this->setName($name);
+        $this->setType($type);
+    }
+
+    private function setSeat($seat)
+    {
+        Player::validateSeat($seat);
+
         $this->seat = $seat;
 
         return $this;
@@ -32,32 +40,55 @@ class Summary extends Base
         return $this->seat;
     }
 
-    public function setPlayer($player)
+    private function setName($name)
     {
-        $this->player = $player;
+        Player::validateName($name);
+
+        $this->name = $name;
 
         return $this;
     }
 
-    public function getPlayer()
+    public function getName()
     {
-        return $this->player;
+        return $this->name;
     }
 
-    public function setAction($action)
+    public static function getAllTypes()
     {
-        $this->action = $action;
+        return array(self::FOLD, self::MUCK, self::WIN, self::LOSS);
+    }
+
+    public static function validateType($type)
+    {
+        if (! in_array($type, self::getAllTypes()))
+            throw new InvalidArgumentException(sprintf("Invalid summary type `%s'", $type));
+    }
+
+    private function setType($type)
+    {
+        $this->validateType($type);
+
+        $this->type = $type;
 
         return $this;
     }
 
-    public function getAction()
+    public function getType()
     {
-        return $this->action;
+        return $this->type;
+    }
+
+    public function getTypesWithStreet()
+    {
+        return array(self::FOLD);
     }
 
     public function setStreet($street)
     {
+        if (! in_array($streeet, $this->getTypesWithStreet()))
+            return new LogicException("Street not allowed for summary type");
+
         $this->street = $street;
 
         return $this;
@@ -68,20 +99,18 @@ class Summary extends Base
         return $this->street;
     }
 
-    public function setCards($card1, $card2)
+    public function getTypesWithChips()
     {
-        $this->cards = array($card1, $card2);
-
-        return $this;
-    }
-
-    public function getCards()
-    {
-        return $this->cards;
+        return array(self::WIN);
     }
 
     public function setChips($chips)
     {
+        if (! in_array($streeet, $this->getTypesWithChips()))
+            return new LogicException("Chips value not allowed for summary type");
+
+        Chips::validate($chips);
+
         $this->chips = $chips;
 
         return $this;
@@ -92,17 +121,22 @@ class Summary extends Base
         return $this->chips;
     }
 
-    public function setShows($shows)
+    public function setCards($cards)
     {
-        $this->shows = $shows;
+        if (is_string($cards))
+            $cards = explode(' ', $cards);
+
+        foreach ($cards as $c)
+            Hand::validateCard($c);
+
+        $this->cards = $cards;
 
         return $this;
     }
 
-    public function getShows()
+    public function getCards()
     {
-        return $this->shows;
+        return $this->cards;
     }
-
 }
 

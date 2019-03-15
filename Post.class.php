@@ -5,7 +5,7 @@ class Post extends GamePost
     const STRADDLE = 'straddle';
     const DEAD = 'dead';
 
-    private $player;
+    private $name;
 
     public static function getAllTypes()
     {
@@ -25,24 +25,24 @@ class Post extends GamePost
         return in_array($type, array(self::SB, self::BB));
     }
 
-    public function __construct($type, $chips, $player)
+    public function __construct($type, $chips, $name)
     {
         parent::__construct($type, $chips);
-        $this->setPlayer($player);
+        $this->setName($name);
     }
 
-    public function setPlayer($player)
+    public function setName($name)
     {
-        Player::validateName($player);
+        Player::validateName($name);
 
-        $this->player = $player;
+        $this->name = $name;
 
         return $this;
     }
 
-    public function getPlayer()
+    public function getName()
     {
-        return $this->player;
+        return $this->name;
     }
 }
 

@@ -26,19 +26,11 @@ class Action
 
     private $is_all_in;
 
-    public function __construct($street, $name, $type, $chips = null, $to_chips = null, $is_all_in = false)
+    public function __construct($street, $name, $type)
     {
         $this->setStreet($street);
         $this->setName($name);
         $this->setType($type);
-
-        if (! is_null($chips))
-            $this->setChips($chips);
-
-        if (! is_null($to_chips))
-            $this->setToChips($to_chips);
-
-        $this->setIsAllIn($is_all_in);
     }
 
     private function setStreet($street)
@@ -99,9 +91,22 @@ class Action
         return $this->type;
     }
 
-    private function setChips(float $chips)
+    public static function getTypesWithoutChips()
     {
-        Hand::validateChipsAmount($chips);
+        return array(self::CHECK, self::FOLD);
+    }
+
+    public static function getTypesWithChips()
+    {
+        return array(self::CALL, self::BET, self::RAISE, self::RESULT, self::RETRN);
+    }
+
+    public function setChips($chips)
+    {
+        if (! in_array($this->getType(), $this->getTypesWithChips()))
+            throw new LogicException("Chips value not allowed for type");
+
+        Chips::validate($chips);
 
         $this->chips = $chips;
 
@@ -113,9 +118,17 @@ class Action
         return $this->chips;
     }
 
-    private function setToChips(float $to_chips)
+    public static function getTypesWithToChips()
     {
-        Hand::validateChipsAmount($to_chips);
+        return array(self::RAISE);
+    }
+
+    public function setToChips($to_chips)
+    {
+        if (! in_array($this->getType(), $this->getTypesWithToChips()))
+            throw new LogicException("To chips value not allowed for type");
+
+        Chips::validate($to_chips);
 
         $this->to_chips = $to_chips;
 
@@ -127,8 +140,16 @@ class Action
         return $this->to_chips;
     }
 
-    private function setIsAllIn($is_all_in)
+    public static function getTypesWithAllIn()
     {
+        return array(self::CALL, self::BET, self::RAISE);
+    }
+
+    public function setIsAllIn($is_all_in)
+    {
+        if (! in_array($this->getType(), $this->getTypesWithAllIn()))
+            throw new LogicException("All-in not allowed for type");
+
         $this->is_all_in = (boolean) $is_all_in;
 
         return $this;

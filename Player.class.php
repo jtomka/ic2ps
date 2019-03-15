@@ -10,6 +10,8 @@ class Player extends Base
 
     private $is_hero;
 
+    private $position;
+
     public function __construct($seat, $name, $chips, $is_hero = false)
     {
         $this->setSeat($seat);
@@ -90,14 +92,26 @@ class Player extends Base
 
     public function getIsHero()
     {
-        return (bool) $this->is_hero;
+        return $this->is_hero;
     }
 
     private function setIsHero($is_hero = true)
     {
-        $this->is_hero = (bool) $is_hero;
+        $this->is_hero = (boolean) $is_hero;
 
         return $this;
+    }
+
+    public function setPosition($position)
+    {
+        Position::validate($position);
+
+        $this->position = $position;
+    }
+
+    public function getPosition()
+    {
+        return $this->position;
     }
 }
 
