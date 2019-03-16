@@ -4,7 +4,21 @@ class PsGenerator extends Base implements GeneratorInterface
 {
     const TIME_FORMAT = '%Y/%m/%d %H:%M:%S';
 
+    private static $singleton = null;
+
     private $hand;
+
+    private function __construct()
+    {
+    }
+
+    public static function getInstance()
+    {
+        if (is_null(self::$singleton))
+            self::$singleton = new PsGenerator();
+
+        return self::$singleton;
+    }
 
     private function setHand(Hand $hand)
     {
@@ -41,32 +55,42 @@ class PsGenerator extends Base implements GeneratorInterface
 
     private function getGameSb()
     {
-        return $this->getHand()->getGamePost(Post::SB);
+        return $this->getHand()->getGameSb();
     }
 
     private function getGameBb()
     {
-        return $this->getHand()->getGamePost(Post::BB);
+        return $this->getHand()->getGameBb();
     }
 
     private function getAestTime()
     {
-        return strftime($this->TIME_FORMAT, $this->getHand()->getTimestamp()) . " AEST";
+        return strftime($this::TIME_FORMAT, $this->getHand()->getTimestamp()) . " AEST";
     }
 
     private function getEtTime()
     {
         $time_diff = - (15 * 60 * 60);
 
-        return strftime($this->TIME_FORMAT, $this->getHand()->getTimestamp() + $time_diff) . " ET";
+        return strftime($this::TIME_FORMAT, $this->getHand()->getTimestamp() + $time_diff) . " ET";
     }
 
     private function getHandInitText()
     {
-        return sprintf("PokerStars Hand #%d:  %s %s ($%.02f/$%.02f USD) - %s [%s]\n",
-            $this->getId(), $this->getGame(), $this->getLimit(),
-            $this->getGameSb(), $this->getGameBb(),
+        $stakes_text = sprintf("%s/%s", $this->formatChips($this->getGameSb()),
+                $this->formatChips($this->getGameBb()));
+        if (! $this->getHand()->getIsPlayMoney())
+            $stakes_text .= ' ' . $this->getCurrencyCode();
+        $stakes_text = '(' . $stakes_text . ')';
+
+        return sprintf("PokerStars Hand #%d:  %s %s %s - %s [%s]\n",
+            $this->getId(), $this->getGame(), $this->getLimit(), $stakes_text,
             $this->getAestTime(), $this->getEtTime());
+    }
+
+    private function getTableId()
+    {
+        return $this->getHand()->getTableId();
     }
 
     private function getTableSize()
@@ -103,14 +127,34 @@ class PsGenerator extends Base implements GeneratorInterface
             $this->getTableId(), $this->getTableSize(), $this->getDealerSeat());
     }
 
+    private function getCurrencySymbol()
+    {
+        return $this->getHand()->getCurrency()->getSymbol();
+    }
+
+    private function getCurrencyCode()
+    {
+        return $this->getHand()->getCurrency()->getCode();
+    }
+
     private function formatChips($chips)
     {
-        $tr_format = array(
-            Format::CASH_GAME => '$%.02f',
-            Format::TOURNAMENT => '%d'
-        );
+        $out = '';
+        $format = $this->getHand()->getFormat();
+        Format::validate($format);
 
-        return sprintf($tr_format[$this->getHand()->getFormat()], $chips);
+        if ($this->getHand()->getFormat() == Format::CASH_GAME) {
+            if (! $this->getHand()->getIsPlayMoney())
+                $out .= $this->getCurrencySymbol();
+            
+            $format_string = '%.02f';
+        } else {
+            $format_string = '%d';
+        }
+
+        $out .= sprintf($format_string, $chips);
+
+        return $out;
     }
 
     private function getSeatsText()
@@ -134,9 +178,14 @@ class PsGenerator extends Base implements GeneratorInterface
             Post::BB => 'big blind',
         );
 
-        foreach ($this->getHand()->getPosts() as $post) {
-            $out .= sprintf("%s: posts %s %s\n", $post->getName(), $tr_post[$post->getType()],
-                $this->formatChips($post->getChips()));
+        foreach ($this->getHand()->getPosts() as $posts_of_type) {
+            if (! is_array($posts_of_type))
+                $posts_of_type = array($posts_of_type);
+
+            foreach ($posts_of_type as $post) {
+                $out .= sprintf("%s: posts %s %s\n", $post->getName(), $tr_post[$post->getType()],
+                    $this->formatChips($post->getChips()));
+            }
         }
 
         return $out;
@@ -153,8 +202,8 @@ class PsGenerator extends Base implements GeneratorInterface
 
         $out .= "*** HOLE CARDS ***\n";
 
-        $player = $this->getHeroPlayer();
-        $out .= sprintf("Dealt to %s [%s]\n", $player->getName(),
+        $player = $this->getHand()->getHeroPlayer();
+        $out .= sprintf("Dealt to %s %s\n", $player->getName(),
             $this->formatCards($player->getCards()));
 
         $out .= $this->getActionsText(Street::PREFLOP);
@@ -175,21 +224,29 @@ class PsGenerator extends Base implements GeneratorInterface
         );
 
         foreach ($this->getHand()->getAction($street) as $action) {
-            if ($action->getType() == Action:RETRN) {
+            if ($action->getType() == Action::RETRN) {
                 $out .= sprintf("Uncalled bet (%s) returned to %s\n",
                     $this->formatChips($action->getChips()), $action->getName());
 
             } elseif (in_array($action->getType(), Action::getTypesWithoutChips())) {
                 $out .= sprintf("%s: %s\n", $action->getName(), $tr_type[$action->getType()]);
 
+            } elseif ($action->getType() == Action::RESULT) {
+                $out .= sprintf("%s: collects %s", $action->getName(),
+                    $this->formatChips($action->getChips()));
+
+                // from the pot/side-pot
+
+                $out .= "\n";
+
             } elseif (in_array($action->getType(), Action::getTypesWithChips())) {
-                $out .= sprintf("%s: %s %s", $action->getName(), $tr_action[$action->getType()],
+                $out .= sprintf("%s: %s %s", $action->getName(), $tr_type[$action->getType()],
                     $this->formatChips($action->getChips()));
 
                 if (in_array($action->getType(), Action::getTypesWithToChips()))
                     $out .= sprintf(" to %s", $this->formatChips($action->getToChips()));
 
-                if (in_array($action->getType(), Action::getTypesWithAllIn()))
+                if (in_array($action->getType(), Action::getTypesWithAllIn())
                         && $action->getIsAllIn()) {
                     $out .= sprintf(" and is all-in", $this->formatChips($action->getToChips()));
                 }
@@ -236,14 +293,13 @@ class PsGenerator extends Base implements GeneratorInterface
     private function getRiverText()
     {
         $out = '';
-        $flop_turn_cards = array_merge($this->getHand()->getCommunityCards(Street::FLOP),
-            $this->getHand()->getCommunityCards(Street::TURN));
+        $turn_board = $this->getHand()->getBoard(Street::TURN);
         $river_cards = $this->getHand()->getCommunityCards(Street::RIVER);
 
         if (empty($river_cards))
             return $out;
 
-        $out .= sprintf("*** RIVER *** %s %s\n", $this->formatCards($flop_turn_cards),
+        $out .= sprintf("*** RIVER *** %s %s\n", $this->formatCards($turn_board),
             $this->formatCards($river_cards));
 
         $out .= $this->getActionsText(Street::RIVER);
@@ -378,9 +434,9 @@ class PsGenerator extends Base implements GeneratorInterface
 
         $out .= $this->getRiverText();
 
-        $out .= $this->getShowdownText();
+        //$out .= $this->getShowdownText();
 
-        $out .= $this->getSummaryText();
+        //$out .= $this->getSummaryText();
 
         $out .= "\n";
 

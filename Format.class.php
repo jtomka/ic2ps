@@ -2,7 +2,7 @@
 
 class Format extends Base
 {
-    const CASH_GAME = 'cash';
+    const CASH_GAME = 'cash_game';
     const TOURNAMENT = 'tournament';
 
     public static function getAll()

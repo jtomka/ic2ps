@@ -30,7 +30,7 @@ class GamePost extends Base
     {
         $this->validate($type);
 
-        $this->post = $type;
+        $this->type = $type;
 
         return $this;
     }
@@ -49,7 +49,7 @@ class GamePost extends Base
         return $this;
     }
 
-    public function getChips($chips)
+    public function getChips()
     {
         return $this->chips;
     }

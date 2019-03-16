@@ -4,6 +4,8 @@ class Hand extends Base
 {
     private $id;
 
+    private $is_play_money;
+
     private $format;
 
     private $tournament;
@@ -40,6 +42,8 @@ class Hand extends Base
 
     public function __construct()
     {
+        $this->play_money = false;
+
         foreach (Post::getAllTypes() as $type)
             if (! Post::isSingle($type))
                 $this->posts[$type] = array();
@@ -75,6 +79,32 @@ class Hand extends Base
     public function getId()
     {
 	return $this->id;
+    }
+
+    public function setIsPlayMoney($is_play_money)
+    {
+        $this->is_play_money = (boolean) $is_play_money;
+
+        return $this;
+    }
+
+    public function getIsPlayMoney()
+    {
+        return $this->is_play_money;
+    }
+
+    public function setFormat($format)
+    {
+        Format::validate($format);
+
+        $this->format = $format;
+
+        return $this;
+    }
+
+    public function getFormat()
+    {
+        return $this->format;
     }
 
     public static function validateTableId($table_id)
@@ -161,11 +191,14 @@ class Hand extends Base
 
     public function setCurrency($currency)
     {
-        Currency::validate($currency);
-
-        $this->currency = $currency;
+        $this->currency = Currency::getInstance($currency);
 
         return $this;
+    }
+
+    public function getCurrency()
+    {
+        return $this->currency;
     }
 
     public function addPlayer($seat, $name, $chips, $is_hero = false)
@@ -203,22 +236,24 @@ class Hand extends Base
         $dealer_seat = $this->getDealerSeat();
 
         $i = null;
-        $seats = $this->getSeats();
-        foreach (array_merge($seats, $seats) as $player) {
+        $players = $this->getPlayers();
+        foreach (array_merge($players, $players) as $player) {
             if (is_null($i)) {
-                if ($player->getSeat() == $this->getDealerSeat())
+                if ($player->getSeat() == $dealer_seat)
                     $i = 0;
                 else
                     continue;
             } else {
-                if ($player->getSeat() == $this->getDealerSeat())
+                if ($player->getSeat() == $dealer_seat)
                     break;
                 else
                     $i++;
             }
 
-            $player->setPosition(Position::calculate($this->getTableSize(), $i));
+            $player->setPosition(Position::calculate(count($players), $i));
         }
+
+        return $this;
     }
 
     public function getDealerPlayer()
@@ -285,6 +320,16 @@ class Hand extends Base
 	return $this;
     }
 
+    public function setGameSb($chips)
+    {
+        return $this->setGamePost(Post::SB, $chips);
+    }
+
+    public function setGameBb($chips)
+    {
+        return $this->setGamePost(Post::BB, $chips);
+    }
+
     public function getGamePosts()
     {
     	return $this->game_posts;
@@ -297,6 +342,16 @@ class Hand extends Base
         $posts = $this->getGamePosts();
 
     	return $posts[$type];
+    }
+
+    public function getGameSb()
+    {
+        return $this->getGamePost(Post::SB)->getChips();
+    }
+
+    public function getGameBb()
+    {
+        return $this->getGamePost(Post::BB)->getChips();
     }
 
     public function addPost($type, $chips, $player)
@@ -456,9 +511,23 @@ class Hand extends Base
 	return $this->rake;
     }
 
-    public function getBoard()
+    public function getBoard($street = null)
     {
-    	return $this->getCommunityCards();
+        $result = array();
+
+        if (! is_null($street))
+            Street::validatePostflop($street);
+        else
+            $street = Street::getLast();
+
+        foreach (Street::getAllPostflop() as $postflop_street) {
+            $result = array_merge($result, $this->getCommunityCards($postflop_street));
+
+            if ($postflop_street == $street)
+                break;
+        }
+
+    	return $result;
     }
 
     public function addSummary($seat, $name, $type)

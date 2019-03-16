@@ -29,9 +29,17 @@ class Street extends Base
             throw new InvalidArgumentException(sprintf("Invalid street `%s'", $street));
     }
 
+    public static function getLast()
+    {
+        $all = self::getAll();
+
+        return array_pop($all);
+    }
+
     public static function validateCardCount($street, $card_count)
     {
-        if (($street == self::FLOP && $card_count != 3)
+        if ((is_null($street) && $card_count != 5)
+         || ($street == self::FLOP && $card_count != 3)
          || ($street == self::TURN && $card_count != 1)
          || ($street == self::RIVER && $card_count != 1)) {
             throw new InvalidArgumentException(sprintf("Invalid nuber of community cards (%d) for street `%s'", $card_count, $street));

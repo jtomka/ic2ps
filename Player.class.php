@@ -69,6 +69,11 @@ class Player extends Base
         return $this;
     }
 
+    public function getChips()
+    {
+        return $this->chips;
+    }
+
     public function setCards($cards)
     {
         if (isset($this->cards))
