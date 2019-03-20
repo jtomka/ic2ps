@@ -12,6 +12,26 @@ class Ranking extends Base
     const QUADS = 'quads';
     const STRAIGHT_FLUSH = 'straight_flush';
 
+    private static $ranking_strings = array(
+        self::HIGH_CARD => 'High Card',
+        self::PAIR => 'a Pair',
+        self::TWO_PAIR => 'Two Pair',
+        self::TRIPS => 'Three of a Kind',
+        self::STRAIGHT => 'Straight',
+        self::FLUSH => 'Flush',
+        self::FULL_HOUSE => 'Full House',
+        self::QUADS => 'Four of a Kind',
+        self::STRAIGHT_FLUSH => 'Straight Flush',
+    );
+
+    public static function handRankStr($hand_rank)
+    {
+        if (! isset(self::$ranking_strings[$hand_rank]))
+            throw new InvalidArgumentException(sprintf("Invalid hand rank (%s)", $hand_rank));
+
+        return self::$ranking_strings[$hand_rank];
+    }
+
     const LOW_ACE = 1;
     const DEUCE = 2;
     const TREY = 3;
@@ -43,7 +63,21 @@ class Ranking extends Base
         'A' => self::ACE,
     );
 
-    private static $card_rank_rev = '.A23456789TJQKA';
+    private static $RANK_CHAR_MAP = '0A23456789TJQKA';
+
+    private static $SCORE_CELL_SHIFT = 16; // 4 bits
+
+    private static $HAND_RANK_SCORE_MAP = array(
+        self::STRAIGHT_FLUSH => 8,
+        self::QUADS => 7,
+        self::FULL_HOUSE => 6,
+        self::FLUSH => 5,
+        self::STRAIGHT => 4,
+        self::TRIPS => 3,
+        self::TWO_PAIR => 2,
+        self::PAIR => 1,
+        self::HIGH_CARD => 0,
+    );
 
     private $rank; // all
     private $high_card; // high, straight, flush, quads
@@ -56,7 +90,7 @@ class Ranking extends Base
     private $cards_by_rank;
     private $cards_by_suite;
 
-    public function __construct($board, $hand)
+    private function __construct($board, $hand)
     {
         if (is_string($board))
             $board = explode(' ', $board);
@@ -76,10 +110,10 @@ class Ranking extends Base
         foreach ($all_cards as $card) {
             Hand::validateCard($card);
 
-            $rank = $this::$card_rank[(string) $card[0]];
+            $rank = $this::$card_rank[$card[0]];
             $suite = $card[1];
 
-            $this->cards_by_rank[$rank][] = $suite;
+            $this->cards_by_rank[(string) $rank][] = $suite;
             $this->cards_by_suite[$suite][] = $rank;
         }
         krsort($this->cards_by_rank);
@@ -87,6 +121,14 @@ class Ranking extends Base
             rsort($this->cards_by_suite[$suite]);
 
         $this->hand = $hand;
+    }
+
+    public static function cardRankCh($card_rank)
+    {
+        if (! is_int($card_rank) || $card_rank < 1 || $card_rank >= strlen(self::$RANK_CHAR_MAP))
+            throw new InvalidArgumentException(sprintf("Invalid card rank (%d)", $card_rank));
+
+        return self::$RANK_CHAR_MAP[$card_rank];
     }
 
     private function setRank($rank) 
@@ -136,7 +178,26 @@ class Ranking extends Base
 
     public function getScore()
     {
-        $this->score();
+        if (! is_null($this->score))
+            return $this->score;
+
+        $score_hash = array();
+
+        $score_hash[] = $this::$HAND_RANK_SCORE_MAP[$this->getRank()];
+        $score_hash[] = $this->getHighCard();
+        $score_hash[] = (int) $this->getLowCard();
+
+        $kickers = $this->getKickers();
+        $score_hash[] = isset($kickers[0]) ? $kickers[0] : 0;
+        $score_hash[] = isset($kickers[1]) ? $kickers[1] : 0;
+        
+        $score = 0;
+        foreach ($score_hash as $cell)
+            $score = ($score * $this::$SCORE_CELL_SHIFT) + $cell;
+
+        $this->score = $score;
+
+        return $score;
     }
 
     private function setCardsByRank($cards_by_rank)
@@ -159,6 +220,16 @@ class Ranking extends Base
         return $this->cards_by_suite;
     }
 
+    private function checkStraightFlush()
+    {
+        if ($this->getRank() == self::STRAIGHT_FLUSH)
+            return true;
+
+        $this->checkStraight();
+
+        return ($this->getRank() == self::STRAIGHT_FLUSH);
+    }
+
     private function checkQuads()
     {
         if ($this->getRank() == self::QUADS)
@@ -177,10 +248,10 @@ class Ranking extends Base
             return false;
 
         $this->setRank(self::QUADS);
-
         $this->setHighCard($quads);
-        unset($cards[$quads]);
+        $this->setLowCard(null);
 
+        unset($cards[$quads]);
         $this->setKickers(array(array_keys($cards)[0]));
 
         return true;
@@ -191,35 +262,25 @@ class Ranking extends Base
         if ($this->getRank() == self::FULL_HOUSE)
             return true;
 
-        if ($this->checkTrips() && $this->checkPair()) {
-            $this->setRank(self::FULL_HOUSE);
-            $this->setKickers(array());
+        if (! $this->checkTrips())
+            return false;
+           
+        $save_high = $this->getHighCard();
 
-            return true;
-        }
+        if (! $this->checkPair())
+            return false;
 
-        return false;
+        $save_low = $this->getHighCard();
+
+        $this->setRank(self::FULL_HOUSE);
+        $this->setHighCard($save_high);
+        $this->setLowCard($save_low);
+        $this->setKickers(array());
+
+        return true;
     }
 
-    private function getHigherHandRanks($rank_low, $exclude)
-    {
-        if (! is_array($exclude))
-            $exclude = array($exclude);
-
-        $kickers = array();
-
-        foreach ($this->hand as $card) {
-            $rank = $this::$card_rank[(string) $card[0]];
-            $suite = $card[1];
-
-            if ($rank >= $rank_low && ! in_array($rank, $exclude))
-                $kickers[] = $rank;
-        }
-
-        return $kickers;
-    }
-
-    private function getHigherHandRanksBySuite($rank_low, $flush_suite)
+    private function getHigherHandRankBySuite($rank_low, $flush_suite)
     {
         $kickers = array();
 
@@ -227,8 +288,10 @@ class Ranking extends Base
             $rank = $this::$card_rank[(string) $card[0]];
             $suite = $card[1];
 
-            if ($suite == $flush_suite && $rank >= $rank_low)
-                $kickers[] = $rank;
+            if ($suite == $flush_suite && $rank >= $rank_low) {
+                if (! isset($kickers[0]) || $kickers[0] < $rank)
+                    $kickers[0] = $rank;
+            }
         }
 
         return $kickers;
@@ -253,14 +316,15 @@ class Ranking extends Base
 
         $this->setRank(self::FLUSH);
         $this->setHighCard($flush[0]);
-        $this->setKickers($this->getHigherHandRanksBySuite($flush[4], $suite));
+        $this->setLowCard(null);
+        $this->setKickers($this->getHigherHandRankBySuite($flush[4], $suite));
 
         return true;
     }
 
-    private function checkStraight($required_high_card = null)
+    private function checkStraight()
     {
-        if ($this->getRank() == self::STRAIGHT_FLUSH || $this->getRank() == self::STRAIGHT)
+        if (in_array($this->getRank(), array(self::STRAIGHT_FLUSH, self::STRAIGHT)))
             return true;
 
         $straight = false;
@@ -270,25 +334,27 @@ class Ranking extends Base
             $cards[self::LOW_ACE] = $cards[self::ACE];
 
         for ($i = 0; $i < count($cards) - 5; $i++) {
-            $key_slice = array_slice(array_keys($cards), $i, 5);
-            if ($key_slice[0] - $key_slice[4] == 4) {
+            $five_ranks = array_slice(array_keys($cards), $i, 5);
+            if ($five_ranks[0] - $five_ranks[4] == 4) {
+                $top_card = $five_ranks[0];
+
                 if (! $straight) // save highest straight
-                    $straight = $key_slice[0];
+                    $straight = $top_card;
 
                 // keep looking for straight flush
                 $suite_counter = array();
-                foreach (array_slice($cards, $i, 5) as $suites) {
+                foreach (array_slice($cards, $i, 5, true) as $rank_suites) {
                     if ($straight_flush)
                         break;
 
-                    foreach ($suites as $suite) {
+                    foreach ($rank_suites as $suite) {
                         if (! isset($suite_counter[$suite]))
                             $suite_counter[$suite] = 0;
 
                         $suite_counter[$suite]++;
 
                         if ($suite_counter[$suite] == 5) {
-                            $straight_flush = $key_slice[0];
+                            $straight_flush =  $top_card;
                             break;
                         }
                     }
@@ -307,9 +373,27 @@ class Ranking extends Base
             $this->setHighCard($straight);
         }
 
+        $this->setLowCard(null);
         $this->setKickers(array());
 
         return true;
+    }
+
+    private function getHigherHandRanks($rank_low, $exclude)
+    {
+        if (! is_array($exclude))
+            $exclude = array($exclude);
+
+        $kickers = array();
+
+        foreach ($this->hand as $card) {
+            $rank = $this::$card_rank[(string) $card[0]];
+
+            if ($rank >= $rank_low && ! in_array($rank, $exclude))
+                $kickers[] = $rank;
+        }
+
+        return $kickers;
     }
 
     private function checkTrips()
@@ -330,10 +414,10 @@ class Ranking extends Base
             return false;
 
         $this->setRank(self::TRIPS);
-
         $this->setHighCard($trips);
+        $this->setLowCard(null);
+
         unset($cards[$trips]);
-                          
         $this->setKickers($this->getHigherHandRanks(array_reverse(array_keys($cards))[1], $trips));
 
         return true;
@@ -366,7 +450,7 @@ class Ranking extends Base
         $this->setHighCard($high_pair);
         $this->setLowCard($low_pair);
 
-        $this->setKickers(array($this->getKickers()[0]));
+        $this->setKickers($this->getHigherHandRanks(0, array($high_pair, $low_pair)));
 
         return true;
     }
@@ -389,11 +473,11 @@ class Ranking extends Base
             return false;
 
         $this->setRank(self::PAIR);
-
         $this->setHighCard($pair);
-        unset($cards[$pair]);
+        $this->setLowCard(null);
 
-        $this->setKickers(array_slice(array_keys($cards), 0, 3));
+        unset($cards[$pair]);
+        $this->setKickers($this->getHigherHandRanks(array_keys($cards)[2], $pair));
 
         return true;
     }
@@ -403,41 +487,46 @@ class Ranking extends Base
         if ($this->getRank() == self::HIGH_CARD)
             return true;
 
-        $this->setRank(self::HIGH_CARD);
         $cards = $this->getCardsByRank();
         $high_card = array_keys($cards)[0];
+
+        $this->setRank(self::HIGH_CARD);
         $this->setHighCard($high_card);
-        $this->setKickers(array_slice(array_keys($cards), 1, 4));
+        $this->setLowCard(null);
+
         unset($cards[0]);
         $this->setKickers($this->getHigherHandRanks(array_keys($cards)[3], $high_card));
 
         return true;
     }
 
-    private function calculateScore()
+    public static function compare($hand1, $hand2, $board)
     {
-        $ranks = array(
-            self::STRAIGHT_FLUSH,
-            self::QUADS,
-            self::FULL_HOUSE,
-            self::FLUSH,
-            self::STRAIGHT,
-            self::TRIPS,
-            self::TWO_PAIR,
-            self::PAIR,
-            self::HIGH_CARD,
-        );
+        $score1 = self::calculate($hand1, $board)->getScore();
+        $score2 = self::calculate($hand2, $board)->getScore();
 
-        $rank = $this->getRank();
+        if (is_string($hand1))
+            $hand1 = explode(' ', $hand1);
+
+        if (is_string($hand2))
+            $hand2 = explode(' ', $hand2);
+
+        $both_hands = array_merge($hand1, $hand2);
+        if (count(array_unique($both_hands)) != count($both_hands))
+            throw new InvalidArgumentException(sprintf("Duplicate cards in hands %s",
+                implode(' ', $both_hands)));
+
+        return $score2 - $score1;
     }
 
     private function calculateReal()
     {
         $methods_in_order = array(
-            'checkStraight',
+            'checkStraightFlush',
             'checkQuads',
             'checkFullHouse',
             'checkFlush',
+            'checkStraight',
             'checkTrips',
             'checkTwoPair',
             'checkPair',
@@ -449,8 +538,6 @@ class Ranking extends Base
             if ($result)
                 break;
         }
-
-        $this->calculateScore();
 
         return $this;
     }
