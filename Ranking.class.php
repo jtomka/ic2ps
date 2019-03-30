@@ -65,6 +65,23 @@ class Ranking extends Base
 
     private static $RANK_CHAR_MAP = '0A23456789TJQKA';
 
+    private static $RANK_STR_MAP = array(
+        self::LOW_ACE => 'ace',
+        self::DEUCE => 'deuce',
+        self::TREY => 'trey',
+        self::FOUR => 'four',
+        self::FIVE => 'five',
+        self::SIX => 'six',
+        self::SEVEN => 'seven',
+        self::EIGHT => 'eight',
+        self::NINE => 'nine',
+        self::TEN => 'ten',
+        self::JACK => 'jack',
+        self::QUEEN => 'queen',
+        self::KING => 'king',
+        self::ACE => 'ace',
+    );
+
     private static $SCORE_CELL_SHIFT = 16; // 4 bits
 
     private static $HAND_RANK_SCORE_MAP = array(
@@ -123,12 +140,24 @@ class Ranking extends Base
         $this->hand = $hand;
     }
 
-    public static function cardRankCh($card_rank)
+    public static function validateCardRank($card_rank) 
     {
         if (! is_int($card_rank) || $card_rank < 1 || $card_rank >= strlen(self::$RANK_CHAR_MAP))
             throw new InvalidArgumentException(sprintf("Invalid card rank (%d)", $card_rank));
+    }
+
+    public static function cardRankCh($card_rank)
+    {
+        self::validateCardRank($card_rank);
 
         return self::$RANK_CHAR_MAP[$card_rank];
+    }
+
+    public static function cardRankStr($card_rank)
+    {
+        self::validateCardRank($card_rank);
+
+        return self::$RANK_STR_MAP[$card_rank];
     }
 
     private function setRank($rank) 
