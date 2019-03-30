@@ -66,20 +66,20 @@ class Ranking extends Base
     private static $RANK_CHAR_MAP = '0A23456789TJQKA';
 
     private static $RANK_STR_MAP = array(
-        self::LOW_ACE => 'ace',
-        self::DEUCE => 'deuce',
-        self::TREY => 'trey',
-        self::FOUR => 'four',
-        self::FIVE => 'five',
-        self::SIX => 'six',
-        self::SEVEN => 'seven',
-        self::EIGHT => 'eight',
-        self::NINE => 'nine',
-        self::TEN => 'ten',
-        self::JACK => 'jack',
-        self::QUEEN => 'queen',
-        self::KING => 'king',
-        self::ACE => 'ace',
+        self::LOW_ACE => 'Ace',
+        self::DEUCE => 'Deuce',
+        self::TREY => 'Trey',
+        self::FOUR => 'Four',
+        self::FIVE => 'Five',
+        self::SIX => 'Six',
+        self::SEVEN => 'Seven',
+        self::EIGHT => 'Eight',
+        self::NINE => 'Nine',
+        self::TEN => 'Ten',
+        self::JACK => 'Jack',
+        self::QUEEN => 'Queen',
+        self::KING => 'King',
+        self::ACE => 'Ace',
     );
 
     private static $SCORE_CELL_SHIFT = 16; // 4 bits
