@@ -307,6 +307,58 @@ class PsGenerator extends Base implements GeneratorInterface
         return $out;
     }
 
+    private function getRanking($cards)
+    {
+        return Ranking::calculate($cards, $this->getHand()->getBoard());
+    }
+
+    private function formatRanking($ranking)
+    {
+        $ch = function ($card) {
+            return Ranking::cardRankCh($card);
+        };
+
+        $hi = $ch($ranking->getHighCard());
+        if ($ranking->getLowCard() !== null)
+            $lo = $ch($ranking->getLowCard());
+
+        $out = '';
+
+        $out .= Ranking::handRankStr($ranking->getRank());
+
+        switch ($ranking->getRank()) {
+
+        case Ranking::FULL_HOUSE:
+            $out .= ' ' . $hi . 's full of ' . $lo . 's';
+            break;
+
+        case Ranking::TWO_PAIR:
+            $out .= ' ' . $hi . 's and ' . $lo . 's';
+            break;
+
+        case Ranking::QUADS:
+        case Ranking::TRIPS:
+            $out .= ' ' . $hi . 's';
+            break;
+
+        case Ranking::PAIR:
+            $out .= ' of ' . $hi . 's';
+            break;
+
+        default:
+            $out .= ' ' . $hi;
+            break;
+        }
+
+        $kicker_chars = array();
+        foreach ($ranking->getKickers() as $kicker)
+            $kicker_chars[$kicker] = $ch($kicker);
+        if (! empty($kicker_chars))
+            $out .= ', kickers ' . implode(' ', $kicker_chars);
+
+        return $out;
+    }
+
     private function getShowdownText()
     {
         $out = '';
@@ -321,9 +373,10 @@ class PsGenerator extends Base implements GeneratorInterface
         foreach ($showdown_action as $action) {
             if ($action->getType() == Action::SHOWDOWN) {
                 $cards = $this->getHand()->getPlayer($action->getName())->getCards();
+                $ranking = $this->getRanking($cards);
 
                 $out .= sprintf("%s: shows %s (%s)\n", $action->getName(),
-                    $this->formatCards($cards), $action->getRanking());
+                    $this->formatCards($cards), $this->formatRanking($ranking));
 
             } elseif ($action->getType() == Action::MUCK) {
                 $out .= sprintf("%s: mucks hand\n", $action->getName());
@@ -434,7 +487,7 @@ class PsGenerator extends Base implements GeneratorInterface
 
         $out .= $this->getRiverText();
 
-        //$out .= $this->getShowdownText();
+        $out .= $this->getShowdownText();
 
         //$out .= $this->getSummaryText();
 
