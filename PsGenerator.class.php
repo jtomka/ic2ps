@@ -315,7 +315,7 @@ class PsGenerator extends Base implements GeneratorInterface
     private function formatRanking($ranking)
     {
         $ch = function ($card) {
-            return Ranking::cardRankCh($card);
+            return Ranking::cardRankStr($card);
         };
 
         $hi = $ch($ranking->getHighCard());
@@ -329,32 +329,34 @@ class PsGenerator extends Base implements GeneratorInterface
         switch ($ranking->getRank()) {
 
         case Ranking::FULL_HOUSE:
-            $out .= ' ' . $hi . 's full of ' . $lo . 's';
+            $out .= sprintf(', %ss full of %ss', $hi, $lo);
             break;
 
         case Ranking::TWO_PAIR:
-            $out .= ' ' . $hi . 's and ' . $lo . 's';
+            $out .= sprintf(', %ss and %ss', $hi, $lo);
             break;
 
         case Ranking::QUADS:
         case Ranking::TRIPS:
-            $out .= ' ' . $hi . 's';
+            $out .= sprintf(', %ss', $hi);
             break;
 
         case Ranking::PAIR:
-            $out .= ' of ' . $hi . 's';
+            $out .= sprintf(' of %ss', $hi);
             break;
 
         default:
-            $out .= ' ' . $hi;
+            $out .= sprintf(' %s', $hi);
             break;
         }
 
-        $kicker_chars = array();
-        foreach ($ranking->getKickers() as $kicker)
-            $kicker_chars[$kicker] = $ch($kicker);
-        if (! empty($kicker_chars))
-            $out .= ', kickers ' . implode(' ', $kicker_chars);
+        $kickers = array();
+        foreach ($ranking->getKickers() as $k)
+            $kickers[$k] = $ch($k);
+        if (count($kickers) > 0) {
+            $out .= sprintf(', %s %s', (count($kickers) == 1 ? 'kicker' : 'kickers'),
+                implode(', ', $kickers));
+        }
 
         return $out;
     }
